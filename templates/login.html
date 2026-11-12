@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}ورود | مدیریت مالی شخصی{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <h1>ورود به حساب</h1>
+    <p class="subtitle">به سامانه‌ی مدیریت مالی شخصی خوش آمدید</p>
+
+    <div id="error-box" class="alert hidden"></div>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label for="username">نام کاربری</label>
+        <input id="username" class="ltr" autocomplete="username" required>
+      </div>
+      <div class="form-group">
+        <label for="password">رمز عبور</label>
+        <input id="password" type="password" class="ltr" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-block" id="submit-btn" type="submit">ورود</button>
+    </form>
+
+    <p class="switch">حساب ندارید؟ <a href="/register/">ثبت‌نام</a></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (Auth.refresh) window.location.href = '/';
+
+  const form = document.getElementById('login-form');
+  const errorBox = document.getElementById('error-box');
+  const button = document.getElementById('submit-btn');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideError(errorBox);
+    button.disabled = true;
+
+    try {
+      const res = await fetch('/api/auth/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value,
+        }),
+      });
+
+      if (res.ok) {
+        Auth.save(await res.json());
+        window.location.href = '/';
+        return;
+      }
+      showError(
+        errorBox,
+        res.status === 401
+          ? 'نام کاربری یا رمز عبور اشتباه است.'
+          : formatErrors(await res.json())
+      );
+    } catch (error) {
+      showError(errorBox, 'ارتباط با سرور برقرار نشد.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
+{% endblock %}
