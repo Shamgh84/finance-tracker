@@ -6,6 +6,7 @@ from . import services
 from .serializers import (
     CategoryBreakdownQuerySerializer,
     DateRangeSerializer,
+    MonthQuerySerializer,
     TrendQuerySerializer,
 )
 
@@ -51,3 +52,42 @@ class TrendView(APIView):
                 timezone.localdate(),
             )
         )
+
+
+class ComparisonView(APIView):
+    def get(self, request):
+        query = MonthQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        today = timezone.localdate()
+        year = query.validated_data.get('year', today.year)
+        month = query.validated_data.get('month', today.month)
+        return Response(
+            services.get_month_comparison(request.user, year, month, today)
+        )
+
+
+class ForecastView(APIView):
+    def get(self, request):
+        return Response(services.get_forecast(request.user, timezone.localdate()))
+
+
+class HealthScoreView(APIView):
+    def get(self, request):
+        return Response(services.get_health_score(request.user, timezone.localdate()))
+
+
+class ReportView(APIView):
+    def get(self, request):
+        today = timezone.localdate()
+        comparison = services.get_month_comparison(
+            request.user, today.year, today.month, today
+        )
+        forecast = services.get_forecast(request.user, today)
+        health = services.get_health_score(request.user, today)
+        return Response({
+            'month': f'{today.year}-{today.month:02d}',
+            'insights': services.build_insights(comparison, forecast, health),
+            'health_score': health,
+            'forecast': forecast,
+            'comparison': comparison,
+        })
