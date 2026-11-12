@@ -1,0 +1,244 @@
+{% extends 'app_base.html' %}
+
+{% block title %}بودجه‌ها | مدیریت مالی شخصی{% endblock %}
+
+{% block page %}
+<div class="page-head">
+  <h2>بودجه‌ها</h2>
+  <button class="btn" id="add-btn" type="button">+ بودجه‌ی جدید</button>
+</div>
+
+<section id="alerts-box" class="hidden"></section>
+
+<section class="card filters">
+  <div class="form-group">
+    <label for="f-year">سال (میلادی)</label>
+    <input id="f-year" type="number" min="2000" max="2100" class="ltr">
+  </div>
+  <div class="form-group">
+    <label for="f-month">ماه (میلادی)</label>
+    <select id="f-month"></select>
+  </div>
+</section>
+
+<section id="budget-grid" class="budget-grid"></section>
+<p id="empty-msg" class="muted hidden">برای این ماه بودجه‌ای تعریف نشده است.</p>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h3 id="modal-title"></h3>
+    <div id="form-error" class="alert hidden"></div>
+    <form id="budget-form">
+      <div class="form-group">
+        <label for="m-category">دسته‌ی هزینه</label>
+        <select id="m-category" required></select>
+      </div>
+      <div class="form-group">
+        <label for="m-year">سال (میلادی)</label>
+        <input id="m-year" type="number" min="2000" max="2100" class="ltr" required>
+      </div>
+      <div class="form-group">
+        <label for="m-month">ماه (میلادی)</label>
+        <select id="m-month" required></select>
+      </div>
+      <div class="form-group">
+        <label for="m-limit">سقف بودجه</label>
+        <input id="m-limit" type="number" min="0.01" step="0.01" class="ltr" required>
+      </div>
+      <div class="form-group">
+        <label for="m-threshold">هشدار در رسیدن به چند درصد؟</label>
+        <input id="m-threshold" type="number" min="1" max="100" class="ltr" value="80" required>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="m-save" type="submit">ذخیره</button>
+        <button class="btn btn-outline" id="m-cancel" type="button">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const now = new Date();
+  const state = { categories: [], items: {}, editingId: null };
+
+  const STATUS_LABELS = {
+    ok: 'در محدوده',
+    warning: 'نزدیک به سقف',
+    exceeded: 'عبور از سقف',
+  };
+
+  function monthName(month) {
+    return new Date(2000, month - 1, 1).toLocaleDateString('fa-IR-u-ca-gregory', { month: 'long' });
+  }
+
+  function fillMonthSelect(select) {
+    select.innerHTML = '';
+    for (let m = 1; m <= 12; m++) select.add(new Option(`${m} - ${monthName(m)}`, m));
+  }
+
+  // ---------- هشدارهای ماه جاری ----------
+  async function loadAlerts() {
+    const res = await apiFetch('/api/budgets/alerts/');
+    const box = $('alerts-box');
+    if (!res.ok) { box.classList.add('hidden'); return; }
+
+    const alerts = await res.json();
+    if (alerts.length === 0) { box.classList.add('hidden'); return; }
+
+    box.innerHTML = alerts
+      .map((a) => {
+        const kind = a.status === 'exceeded' ? 'alert' : 'alert alert-warning';
+        return `<div class="${kind}"><strong>${escapeHtml(a.category_name)}:</strong> ${escapeHtml(a.message)}</div>`;
+      })
+      .join('');
+    box.classList.remove('hidden');
+  }
+
+  // ---------- لیست بودجه‌ها ----------
+  async function loadBudgets() {
+    const year = $('f-year').value;
+    const month = $('f-month').value;
+    if (!year) return;
+
+    const res = await apiFetch(`/api/budgets/?year=${year}&month=${month}`);
+    if (!res.ok) { alert('دریافت بودجه‌ها با خطا روبه‌رو شد.'); return; }
+
+    const budgets = await res.json();
+    state.items = Object.fromEntries(budgets.map((b) => [b.id, b]));
+    $('budget-grid').innerHTML = budgets.map(renderCard).join('');
+    $('empty-msg').classList.toggle('hidden', budgets.length > 0);
+  }
+
+  function renderCard(b) {
+    const percentUsed = Number(b.percent_used);
+    const barWidth = Math.min(percentUsed, 100);
+    const remaining = Number(b.remaining);
+    const remainingText = remaining >= 0
+      ? `باقی‌مانده: ${formatMoney(remaining)}`
+      : `بیشتر از سقف: ${formatMoney(-remaining)}`;
+
+    return `<div class="card budget-card">
+      <div class="budget-head">
+        <strong>${escapeHtml(b.category_name)}</strong>
+        <span class="status-badge status-${b.status}">${STATUS_LABELS[b.status]}</span>
+      </div>
+      <div class="progress"><div class="progress-bar progress-${b.status}" style="width:${barWidth}%"></div></div>
+      <div class="budget-stats">
+        <span>مصرف: ${formatMoney(b.spent)} از ${formatMoney(b.limit_amount)}</span>
+        <span>${percentUsed.toLocaleString('fa-IR')}٪</span>
+      </div>
+      <div class="muted">${remainingText}</div>
+      <div class="actions">
+        <button class="link-btn" data-edit="${b.id}" type="button">ویرایش</button>
+        <button class="link-btn danger" data-delete="${b.id}" type="button">حذف</button>
+      </div>
+    </div>`;
+  }
+
+  // ---------- فرم افزودن و ویرایش ----------
+  function fillCategorySelect(selectedId) {
+    const select = $('m-category');
+    select.innerHTML = '';
+    state.categories
+      .filter((c) => c.type === 'expense')
+      .forEach((c) => select.add(new Option(c.name, c.id)));
+    if (selectedId) select.value = String(selectedId);
+  }
+
+  function openModal(budget) {
+    hideError($('form-error'));
+    state.editingId = budget ? budget.id : null;
+    $('modal-title').textContent = budget ? 'ویرایش بودجه' : 'بودجه‌ی جدید';
+
+    fillCategorySelect(budget ? budget.category : null);
+    $('m-year').value = budget ? budget.year : $('f-year').value;
+    $('m-month').value = budget ? budget.month : $('f-month').value;
+    $('m-limit').value = budget ? budget.limit_amount : '';
+    $('m-threshold').value = budget ? budget.alert_threshold : 80;
+    $('modal').classList.remove('hidden');
+  }
+
+  function closeModal() {
+    $('modal').classList.add('hidden');
+  }
+
+  $('budget-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideError($('form-error'));
+    $('m-save').disabled = true;
+
+    const editingId = state.editingId;
+    const body = {
+      category: Number($('m-category').value),
+      year: Number($('m-year').value),
+      month: Number($('m-month').value),
+      limit_amount: $('m-limit').value,
+      alert_threshold: Number($('m-threshold').value),
+    };
+
+    try {
+      const res = await apiFetch(
+        editingId ? `/api/budgets/${editingId}/` : '/api/budgets/',
+        { method: editingId ? 'PUT' : 'POST', body: JSON.stringify(body) }
+      );
+      if (res.ok) {
+        closeModal();
+        // صفحه را به همان ماهی ببر که بودجه در آن ذخیره شد
+        $('f-year').value = body.year;
+        $('f-month').value = body.month;
+        await Promise.all([loadBudgets(), loadAlerts()]);
+        return;
+      }
+      showError($('form-error'), formatErrors(await res.json()));
+    } catch (error) {
+      showError($('form-error'), 'ارتباط با سرور برقرار نشد.');
+    } finally {
+      $('m-save').disabled = false;
+    }
+  });
+
+  // ---------- رویدادها ----------
+  $('budget-grid').addEventListener('click', async (event) => {
+    const editId = event.target.dataset.edit;
+    const deleteId = event.target.dataset.delete;
+
+    if (editId) openModal(state.items[editId]);
+
+    if (deleteId) {
+      if (!confirm('این بودجه حذف شود؟')) return;
+      const res = await apiFetch(`/api/budgets/${deleteId}/`, { method: 'DELETE' });
+      if (res.status === 204) {
+        await Promise.all([loadBudgets(), loadAlerts()]);
+      } else {
+        alert('حذف بودجه انجام نشد.');
+      }
+    }
+  });
+
+  $('add-btn').addEventListener('click', () => openModal(null));
+  $('m-cancel').addEventListener('click', closeModal);
+  $('modal').addEventListener('click', (event) => {
+    if (event.target === $('modal')) closeModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeModal();
+  });
+  $('f-year').addEventListener('change', loadBudgets);
+  $('f-month').addEventListener('change', loadBudgets);
+
+  // ---------- شروع ----------
+  (async () => {
+    fillMonthSelect($('f-month'));
+    fillMonthSelect($('m-month'));
+    $('f-year').value = now.getFullYear();
+    $('f-month').value = now.getMonth() + 1;
+
+    const res = await apiFetch('/api/categories/');
+    if (res.ok) state.categories = await res.json();
+
+    await Promise.all([loadBudgets(), loadAlerts()]);
+  })();
+</script>
+{% endblock %}

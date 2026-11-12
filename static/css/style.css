@@ -215,3 +215,55 @@ body {
 }
 .modal-box h3 { margin-top: 0; }
 .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+/* ---------- بودجه‌ها ---------- */
+.alert-warning {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+#alerts-box { margin-bottom: 1rem; }
+#alerts-box .alert { margin-bottom: 0.5rem; }
+
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.budget-card { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.budget-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.budget-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.progress {
+  height: 10px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-bar { height: 100%; border-radius: 999px; transition: width 0.3s; }
+.progress-ok { background: var(--success); }
+.progress-warning { background: var(--warning); }
+.progress-exceeded { background: var(--danger); }
+
+.status-badge {
+  padding: 0 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+.status-ok { background: #dcfce7; color: var(--success); }
+.status-warning { background: #fef3c7; color: var(--warning); }
+.status-exceeded { background: #fee2e2; color: var(--danger); }
+
+.budget-card .actions { margin-top: 0.25rem; }

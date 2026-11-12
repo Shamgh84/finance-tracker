@@ -40,5 +40,5 @@ class AuthAPITests(APITestCase):
         self.assertEqual(res.status_code, 401)
 
     def test_frontend_pages_load(self):
-        for url in ('/', '/login/', '/register/', '/transactions/'):
+        for url in ('/', '/login/', '/register/', '/transactions/', '/budgets/'):
             self.assertEqual(self.client.get(url).status_code, 200)

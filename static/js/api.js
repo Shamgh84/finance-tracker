@@ -67,6 +67,10 @@ const FIELD_LABELS = {
   amount: 'مبلغ',
   date: 'تاریخ',
   description: 'توضیحات',
+  year: 'سال',
+  month: 'ماه',
+  limit_amount: 'سقف بودجه',
+  alert_threshold: 'درصد هشدار',
   non_field_errors: '',
 };
 
