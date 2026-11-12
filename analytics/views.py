@@ -1,4 +1,6 @@
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,6 +24,11 @@ def resolve_range(params):
 
 
 class SummaryView(APIView):
+    @extend_schema(
+        summary='خلاصه‌ی درآمد، هزینه و موجودی',
+        parameters=[DateRangeSerializer],
+        responses=OpenApiTypes.OBJECT,
+    )
     def get(self, request):
         query = DateRangeSerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -30,6 +37,11 @@ class SummaryView(APIView):
 
 
 class CategoryBreakdownView(APIView):
+    @extend_schema(
+        summary='سهم هر دسته از هزینه‌ها یا درآمدها',
+        parameters=[CategoryBreakdownQuerySerializer],
+        responses=OpenApiTypes.OBJECT,
+    )
     def get(self, request):
         query = CategoryBreakdownQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -42,6 +54,11 @@ class CategoryBreakdownView(APIView):
 
 
 class TrendView(APIView):
+    @extend_schema(
+        summary='روند ماهانه‌ی درآمد و هزینه',
+        parameters=[TrendQuerySerializer],
+        responses=OpenApiTypes.OBJECT,
+    )
     def get(self, request):
         query = TrendQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -55,6 +72,11 @@ class TrendView(APIView):
 
 
 class ComparisonView(APIView):
+    @extend_schema(
+        summary='مقایسه‌ی هزینه‌ی یک ماه با ماه قبل',
+        parameters=[MonthQuerySerializer],
+        responses=OpenApiTypes.OBJECT,
+    )
     def get(self, request):
         query = MonthQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -67,16 +89,19 @@ class ComparisonView(APIView):
 
 
 class ForecastView(APIView):
+    @extend_schema(summary='پیش‌بینی هزینه‌ی پایان ماه', responses=OpenApiTypes.OBJECT)
     def get(self, request):
         return Response(services.get_forecast(request.user, timezone.localdate()))
 
 
 class HealthScoreView(APIView):
+    @extend_schema(summary='امتیاز سلامت مالی (۰ تا ۱۰۰)', responses=OpenApiTypes.OBJECT)
     def get(self, request):
         return Response(services.get_health_score(request.user, timezone.localdate()))
 
 
 class ReportView(APIView):
+    @extend_schema(summary='گزارش کامل تحلیل مالی ماه جاری', responses=OpenApiTypes.OBJECT)
     def get(self, request):
         today = timezone.localdate()
         comparison = services.get_month_comparison(

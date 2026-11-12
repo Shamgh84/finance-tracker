@@ -5,7 +5,10 @@
 {% block page %}
 <div class="page-head">
   <h2>تراکنش‌ها</h2>
-  <button class="btn" id="add-btn" type="button">+ تراکنش جدید</button>
+  <div class="head-actions">
+    <button class="btn btn-outline" id="export-btn" type="button">خروجی CSV</button>
+    <button class="btn" id="add-btn" type="button">+ تراکنش جدید</button>
+  </div>
 </div>
 
 <section class="card filters">
@@ -139,8 +142,8 @@
   }
 
   // ---------- لیست ----------
-  async function loadTransactions() {
-    const params = new URLSearchParams({ page: state.page });
+    function filterParams() {
+    const params = new URLSearchParams();
     const fields = {
       search: 'f-search', type: 'f-type', category: 'f-category',
       date_from: 'f-from', date_to: 'f-to',
@@ -149,6 +152,12 @@
       const value = $(id).value.trim();
       if (value) params.set(key, value);
     }
+    return params;
+  }
+
+  async function loadTransactions() {
+    const params = filterParams();
+    params.set('page', state.page);
 
     const res = await apiFetch(`/api/transactions/?${params}`);
     if (res.status === 404 && state.page > 1) {   // صفحه‌ی آخر خالی شده
@@ -262,6 +271,45 @@
       else alert('حذف تراکنش انجام نشد.');
     }
   });
+
+    $('export-btn').addEventListener('click', async () => {
+    const res = await apiFetch(`/api/transactions/export/?${filterParams()}`);
+    if (!res.ok) { alert('دریافت فایل با خطا روبه‌رو شد.'); return; }
+
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'transactions.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });  $('export-btn').addEventListener('click', async () => {
+    const res = await apiFetch(`/api/transactions/export/?${filterParams()}`);
+    if (!res.ok) { alert('دریافت فایل با خطا روبه‌رو شد.'); return; }
+
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'transactions.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });  $('export-btn').addEventListener('click', async () => {
+    const res = await apiFetch(`/api/transactions/export/?${filterParams()}`);
+    if (!res.ok) { alert('دریافت فایل با خطا روبه‌رو شد.'); return; }
+
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'transactions.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+  
 
   $('add-btn').addEventListener('click', () => openModal(null));
   $('m-cancel').addEventListener('click', closeModal);
