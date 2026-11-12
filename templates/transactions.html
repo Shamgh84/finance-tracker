@@ -1,0 +1,315 @@
+{% extends 'app_base.html' %}
+
+{% block title %}تراکنش‌ها | مدیریت مالی شخصی{% endblock %}
+
+{% block page %}
+<div class="page-head">
+  <h2>تراکنش‌ها</h2>
+  <button class="btn" id="add-btn" type="button">+ تراکنش جدید</button>
+</div>
+
+<section class="card filters">
+  <div class="form-group">
+    <label for="f-search">جستجو</label>
+    <input id="f-search" placeholder="توضیحات یا نام دسته">
+  </div>
+  <div class="form-group">
+    <label for="f-type">نوع</label>
+    <select id="f-type">
+      <option value="">همه</option>
+      <option value="income">درآمد</option>
+      <option value="expense">هزینه</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="f-category">دسته</label>
+    <select id="f-category"></select>
+  </div>
+  <div class="form-group">
+    <label for="f-from">از تاریخ</label>
+    <input id="f-from" type="date">
+  </div>
+  <div class="form-group">
+    <label for="f-to">تا تاریخ</label>
+    <input id="f-to" type="date">
+  </div>
+  <div class="form-group">
+    <button class="btn btn-outline btn-block" id="f-reset" type="button">پاک کردن فیلترها</button>
+  </div>
+</section>
+
+<section class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>تاریخ</th>
+          <th>دسته</th>
+          <th>توضیحات</th>
+          <th>مبلغ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tx-body"></tbody>
+    </table>
+  </div>
+  <p id="empty-msg" class="muted hidden">تراکنشی پیدا نشد.</p>
+
+  <div class="pagination">
+    <button class="btn btn-outline" id="next-btn" type="button">صفحه‌ی بعد</button>
+    <span id="page-info" class="muted"></span>
+    <button class="btn btn-outline" id="prev-btn" type="button">صفحه‌ی قبل</button>
+  </div>
+</section>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h3 id="modal-title"></h3>
+    <div id="form-error" class="alert hidden"></div>
+    <form id="tx-form">
+      <div class="form-group">
+        <label for="m-type">نوع</label>
+        <select id="m-type">
+          <option value="expense">هزینه</option>
+          <option value="income">درآمد</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="m-category">دسته</label>
+        <select id="m-category" required></select>
+      </div>
+      <div class="form-group">
+        <label for="m-amount">مبلغ</label>
+        <input id="m-amount" type="number" min="0.01" step="0.01" class="ltr" required>
+      </div>
+      <div class="form-group">
+        <label for="m-date">تاریخ</label>
+        <input id="m-date" type="date" required>
+      </div>
+      <div class="form-group">
+        <label for="m-desc">توضیحات</label>
+        <input id="m-desc" maxlength="255">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="m-save" type="submit">ذخیره</button>
+        <button class="btn btn-outline" id="m-cancel" type="button">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const PAGE_SIZE = 20;
+  const state = { page: 1, categories: [], items: {}, editingId: null };
+  let searchTimer = null;
+
+  const typeLabel = (type) => (type === 'income' ? 'درآمد' : 'هزینه');
+
+  function todayString() {
+    const d = new Date();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${month}-${day}`;
+  }
+
+  // ---------- دسته‌ها ----------
+  function fillFilterCategories() {
+    const select = $('f-category');
+    const type = $('f-type').value;
+    const previous = select.value;
+    select.innerHTML = '<option value="">همه</option>';
+    state.categories
+      .filter((c) => !type || c.type === type)
+      .forEach((c) => {
+        const label = type ? c.name : `${c.name} (${typeLabel(c.type)})`;
+        select.add(new Option(label, c.id));
+      });
+    if ([...select.options].some((o) => o.value === previous)) select.value = previous;
+  }
+
+  function fillFormCategories(selectedId) {
+    const select = $('m-category');
+    select.innerHTML = '';
+    state.categories
+      .filter((c) => c.type === $('m-type').value)
+      .forEach((c) => select.add(new Option(c.name, c.id)));
+    if (selectedId) select.value = String(selectedId);
+  }
+
+  // ---------- لیست ----------
+  async function loadTransactions() {
+    const params = new URLSearchParams({ page: state.page });
+    const fields = {
+      search: 'f-search', type: 'f-type', category: 'f-category',
+      date_from: 'f-from', date_to: 'f-to',
+    };
+    for (const [key, id] of Object.entries(fields)) {
+      const value = $(id).value.trim();
+      if (value) params.set(key, value);
+    }
+
+    const res = await apiFetch(`/api/transactions/?${params}`);
+    if (res.status === 404 && state.page > 1) {   // صفحه‌ی آخر خالی شده
+      state.page -= 1;
+      return loadTransactions();
+    }
+    if (!res.ok) {
+      alert('دریافت تراکنش‌ها با خطا روبه‌رو شد.');
+      return;
+    }
+    render(await res.json());
+  }
+
+  function render(data) {
+    state.items = Object.fromEntries(data.results.map((t) => [t.id, t]));
+
+    $('tx-body').innerHTML = data.results
+      .map((t) => {
+        const sign = t.category_type === 'income' ? '+' : '−';
+        return `<tr>
+          <td>${formatDate(t.date)}</td>
+          <td>${escapeHtml(t.category_name)}
+              <span class="badge badge-${t.category_type}">${typeLabel(t.category_type)}</span></td>
+          <td>${escapeHtml(t.description) || '—'}</td>
+          <td class="amount amount-${t.category_type}">${sign} ${formatMoney(t.amount)}</td>
+          <td class="actions">
+            <button class="link-btn" data-edit="${t.id}" type="button">ویرایش</button>
+            <button class="link-btn danger" data-delete="${t.id}" type="button">حذف</button>
+          </td>
+        </tr>`;
+      })
+      .join('');
+
+    $('empty-msg').classList.toggle('hidden', data.results.length > 0);
+
+    const totalPages = Math.max(1, Math.ceil(data.count / PAGE_SIZE));
+    $('page-info').textContent = `صفحه ${state.page} از ${totalPages} (${data.count} تراکنش)`;
+    $('prev-btn').disabled = !data.previous;
+    $('next-btn').disabled = !data.next;
+  }
+
+  // ---------- فرم افزودن و ویرایش ----------
+  function openModal(transaction) {
+    hideError($('form-error'));
+    state.editingId = transaction ? transaction.id : null;
+    $('modal-title').textContent = transaction ? 'ویرایش تراکنش' : 'تراکنش جدید';
+
+    if (transaction) {
+      $('m-type').value = transaction.category_type;
+      fillFormCategories(transaction.category);
+      $('m-amount').value = transaction.amount;
+      $('m-date').value = transaction.date;
+      $('m-desc').value = transaction.description;
+    } else {
+      $('m-type').value = 'expense';
+      fillFormCategories();
+      $('m-amount').value = '';
+      $('m-date').value = todayString();
+      $('m-desc').value = '';
+    }
+    $('modal').classList.remove('hidden');
+  }
+
+  function closeModal() {
+    $('modal').classList.add('hidden');
+  }
+
+  $('tx-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideError($('form-error'));
+    $('m-save').disabled = true;
+
+    const editingId = state.editingId;
+    const body = {
+      category: Number($('m-category').value),
+      amount: $('m-amount').value,
+      date: $('m-date').value,
+      description: $('m-desc').value.trim(),
+    };
+
+    try {
+      const res = await apiFetch(
+        editingId ? `/api/transactions/${editingId}/` : '/api/transactions/',
+        { method: editingId ? 'PUT' : 'POST', body: JSON.stringify(body) }
+      );
+      if (res.ok) {
+        closeModal();
+        if (!editingId) state.page = 1;
+        await loadTransactions();
+        return;
+      }
+      showError($('form-error'), formatErrors(await res.json()));
+    } catch (error) {
+      showError($('form-error'), 'ارتباط با سرور برقرار نشد.');
+    } finally {
+      $('m-save').disabled = false;
+    }
+  });
+
+  // ---------- رویدادها ----------
+  $('tx-body').addEventListener('click', async (event) => {
+    const editId = event.target.dataset.edit;
+    const deleteId = event.target.dataset.delete;
+
+    if (editId) openModal(state.items[editId]);
+
+    if (deleteId) {
+      if (!confirm('این تراکنش حذف شود؟')) return;
+      const res = await apiFetch(`/api/transactions/${deleteId}/`, { method: 'DELETE' });
+      if (res.status === 204) loadTransactions();
+      else alert('حذف تراکنش انجام نشد.');
+    }
+  });
+
+  $('add-btn').addEventListener('click', () => openModal(null));
+  $('m-cancel').addEventListener('click', closeModal);
+  $('m-type').addEventListener('change', () => fillFormCategories());
+  $('modal').addEventListener('click', (event) => {
+    if (event.target === $('modal')) closeModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeModal();
+  });
+
+  function applyFilters() {
+    state.page = 1;
+    loadTransactions();
+  }
+
+  $('f-search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyFilters, 400);
+  });
+  $('f-type').addEventListener('change', () => {
+    fillFilterCategories();
+    applyFilters();
+  });
+  ['f-category', 'f-from', 'f-to'].forEach((id) =>
+    $(id).addEventListener('change', applyFilters)
+  );
+  $('f-reset').addEventListener('click', () => {
+    ['f-search', 'f-type', 'f-from', 'f-to'].forEach((id) => ($(id).value = ''));
+    fillFilterCategories();
+    applyFilters();
+  });
+
+  $('prev-btn').addEventListener('click', () => {
+    state.page -= 1;
+    loadTransactions();
+  });
+  $('next-btn').addEventListener('click', () => {
+    state.page += 1;
+    loadTransactions();
+  });
+
+  // ---------- شروع ----------
+  (async () => {
+    const res = await apiFetch('/api/categories/');
+    if (res.ok) state.categories = await res.json();
+    fillFilterCategories();
+    await loadTransactions();
+  })();
+</script>
+{% endblock %}

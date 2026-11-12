@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<header class="topbar">
+  <div class="topbar-start">
+    <span class="brand">مدیریت مالی شخصی</span>
+    <nav class="nav">
+      <a href="/">داشبورد</a>
+      <a href="/transactions/">تراکنش‌ها</a>
+    </nav>
+  </div>
+  <div class="user-box">
+    <span id="user-name"></span>
+    <button class="btn btn-outline" id="logout-btn" type="button">خروج</button>
+  </div>
+</header>
+
+<main class="container">
+  {% block page %}{% endblock %}
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    Auth.requireLogin();
+    document.getElementById('logout-btn').addEventListener('click', Auth.logout);
+
+    const path = window.location.pathname;
+    document.querySelectorAll('.nav a').forEach((link) => {
+      if (link.getAttribute('href') === path) link.classList.add('active');
+    });
+
+    apiFetch('/api/auth/me/')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((user) => {
+        if (user) document.getElementById('user-name').textContent = user.username;
+      })
+      .catch(() => {});
+  })();
+</script>
+{% block page_scripts %}{% endblock %}
+{% endblock %}

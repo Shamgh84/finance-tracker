@@ -63,6 +63,11 @@ const FIELD_LABELS = {
   email: 'ایمیل',
   password: 'رمز عبور',
   password2: 'تکرار رمز عبور',
+  category: 'دسته',
+  amount: 'مبلغ',
+  date: 'تاریخ',
+  description: 'توضیحات',
+  non_field_errors: '',
 };
 
 function formatErrors(data) {
@@ -85,4 +90,24 @@ function showError(element, message) {
 function hideError(element) {
   element.textContent = '';
   element.classList.add('hidden');
+}
+
+// ---------- ابزارهای عمومی ----------
+const $ = (id) => document.getElementById(id);
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text ?? '';
+  return div.innerHTML;
+}
+
+function formatMoney(value) {
+  return Number(value).toLocaleString('fa-IR', { maximumFractionDigits: 0 });
+}
+
+// تاریخ میلادی (YYYY-MM-DD) را به شمسی نمایش می‌دهد
+function formatDate(iso) {
+  if (!iso) return '';
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('fa-IR');
 }

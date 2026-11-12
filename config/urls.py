@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/analytics/', include('analytics.urls')),
     # صفحه‌های فرانت‌اند
     path('', TemplateView.as_view(template_name='dashboard.html'), name='dashboard-page'),
+    path('transactions/', TemplateView.as_view(template_name='transactions.html'), name='transactions-page'),
     path('login/', TemplateView.as_view(template_name='login.html'), name='login-page'),
     path('register/', TemplateView.as_view(template_name='register.html'), name='register-page'),
 ]

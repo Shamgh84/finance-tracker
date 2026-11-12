@@ -1,35 +1,10 @@
-{% extends 'base.html' %}
+{% extends 'app_base.html' %}
 
 {% block title %}داشبورد | مدیریت مالی شخصی{% endblock %}
 
-{% block content %}
-<header class="topbar">
-  <span class="brand">مدیریت مالی شخصی</span>
-  <div class="user-box">
-    <span id="user-name"></span>
-    <button class="btn btn-outline" id="logout-btn" type="button">خروج</button>
-  </div>
-</header>
-
-<main class="container">
-  <div class="card">
-    <h2>داشبورد</h2>
-    <p>ورود شما موفق بود. نمودارها و آمار را در قدم بعدی اضافه می‌کنیم.</p>
-  </div>
-</main>
-{% endblock %}
-
-{% block scripts %}
-<script>
-  Auth.requireLogin();
-  document.getElementById('logout-btn').addEventListener('click', Auth.logout);
-
-  (async () => {
-    const res = await apiFetch('/api/auth/me/');
-    if (res.ok) {
-      const user = await res.json();
-      document.getElementById('user-name').textContent = user.username;
-    }
-  })();
-</script>
+{% block page %}
+<div class="card">
+  <h2>داشبورد</h2>
+  <p>نمودارها و آمار را در قدم‌های بعدی اضافه می‌کنیم.</p>
+</div>
 {% endblock %}
