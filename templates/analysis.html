@@ -1,0 +1,258 @@
+{% extends 'app_base.html' %}
+
+{% block title %}تحلیل مالی | مدیریت مالی شخصی{% endblock %}
+
+{% block page %}
+<div class="page-head">
+  <h2>تحلیل مالی</h2>
+  <span id="month-label" class="muted"></span>
+</div>
+
+<section class="card">
+  <h3 class="section-title">گزارش این ماه</h3>
+  <ul id="insights" class="insights"></ul>
+</section>
+
+<section class="analysis-grid">
+  <div class="card">
+    <h3 class="section-title">امتیاز سلامت مالی</h3>
+    <div class="score-wrap">
+      <div class="score-ring" id="score-ring">
+        <div class="score-inner">
+          <strong id="score-value">—</strong>
+          <span id="score-label" class="muted"></span>
+        </div>
+      </div>
+      <div id="score-parts" class="score-parts"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="section-title">پیش‌بینی پایان ماه</h3>
+    <div id="forecast-box"></div>
+  </div>
+</section>
+
+<section class="card">
+  <h3 class="section-title">مقایسه با ماه قبل</h3>
+  <p id="cmp-note" class="muted"></p>
+  <div id="cmp-summary" class="cmp-summary"></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>دسته</th>
+          <th>این ماه</th>
+          <th>ماه قبل</th>
+          <th>تغییر</th>
+        </tr>
+      </thead>
+      <tbody id="cmp-body"></tbody>
+    </table>
+  </div>
+  <p id="cmp-empty" class="muted hidden">هنوز هزینه‌ای برای مقایسه ثبت نشده است.</p>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const LEVEL_COLORS = {
+    excellent: '#16a34a',
+    good: '#2563eb',
+    fair: '#d97706',
+    poor: '#dc2626',
+  };
+
+  const PART_NAMES = {
+    savings: 'پس‌انداز',
+    budget: 'رعایت بودجه',
+    stability: 'ثبات هزینه',
+  };
+
+  const TREND_TEXT = { up: 'افزایش', down: 'کاهش', new: 'جدید', same: 'بدون تغییر' };
+  const TREND_ARROW = { up: '▲', down: '▼', new: '●', same: '–' };
+
+  const fa = (value) => Number(value).toLocaleString('fa-IR');
+
+  function percentText(value) {
+    return value === null || value === undefined ? '' : `${fa(Math.abs(Number(value)))}٪`;
+  }
+
+  function monthTitle(value) {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(year, month - 1, 1).toLocaleDateString(
+      'fa-IR-u-ca-gregory', { month: 'long', year: 'numeric' }
+    );
+  }
+
+  // ---------- گزارش متنی ----------
+  function renderInsights(insights) {
+    $('insights').innerHTML = insights
+      .map((text) => `<li>${escapeHtml(text)}</li>`)
+      .join('');
+  }
+
+  // ---------- امتیاز سلامت مالی ----------
+  function renderHealth(health) {
+    const color = LEVEL_COLORS[health.level] || '#6b7280';
+    $('score-ring').style.background =
+      `conic-gradient(${color} ${health.score * 3.6}deg, #e5e7eb 0deg)`;
+    $('score-value').textContent = fa(health.score);
+    $('score-value').style.color = color;
+    $('score-label').textContent = health.level_label;
+
+    $('score-parts').innerHTML = Object.entries(health.components)
+      .map(([key, part]) => {
+        const width = Math.min(100, (Number(part.points) / part.max) * 100);
+        return `<div class="score-part">
+          <div class="score-part-head">
+            <span>${PART_NAMES[key]}</span>
+            <span class="muted">${fa(Math.round(Number(part.points)))} از ${fa(part.max)}</span>
+          </div>
+          <div class="progress"><div class="progress-bar progress-ok" style="width:${width}%"></div></div>
+        </div>`;
+      })
+      .join('');
+  }
+
+  // ---------- پیش‌بینی ----------
+  function kvRow(label, value, extraClass = '') {
+    return `<div class="kv"><span class="muted">${label}</span><strong class="${extraClass}">${value}</strong></div>`;
+  }
+
+  function renderForecast(forecast) {
+    const dayPercent = (forecast.days_elapsed / forecast.days_in_month) * 100;
+    $('forecast-box').innerHTML = `
+      <div class="forecast-big">
+        <span class="muted">پیش‌بینی هزینه‌ی کل ماه</span>
+        <strong>${formatMoney(forecast.projected_expense)}</strong>
+      </div>
+      <div class="progress"><div class="progress-bar progress-ok" style="width:${dayPercent}%"></div></div>
+      <div class="muted day-note">روز ${fa(forecast.days_elapsed)} از ${fa(forecast.days_in_month)}</div>
+      ${kvRow('هزینه تا امروز', formatMoney(forecast.spent_so_far))}
+      ${kvRow('میانگین هزینه‌ی روزانه', formatMoney(forecast.daily_average))}
+      ${kvRow('کل هزینه‌ی ماه قبل', formatMoney(forecast.previous_month_expense))}
+    `;
+  }
+
+  // ---------- مقایسه با ماه قبل ----------
+  function changeCell(item) {
+    const trend = item.trend;
+    // برای هزینه، افزایش بد (قرمز) و کاهش خوب (سبز) است
+    const tone = trend === 'up' ? 'amount-expense' : trend === 'down' ? 'amount-income' : 'muted';
+    const percent = percentText(item.change_percent);
+    const amount = `${formatMoney(Math.abs(Number(item.change)))}`;
+    const detail = trend === 'new' || trend === 'same' ? '' : ` (${percent})`;
+    return `<span class="${tone}">${TREND_ARROW[trend]} ${TREND_TEXT[trend]}${trend === 'same' ? '' : ' ' + amount}${detail}</span>`;
+  }
+
+  function renderComparison(cmp) {
+    if (cmp.compared_through_day) {
+      $('cmp-note').textContent =
+        `مقایسه‌ی روزهای ۱ تا ${fa(cmp.compared_through_day)} این ماه با همان روزهای ماه قبل (${monthTitle(cmp.previous_month)})`;
+    } else {
+      $('cmp-note').textContent = `مقایسه‌ی ${monthTitle(cmp.month)} با ${monthTitle(cmp.previous_month)}`;
+    }
+
+    $('cmp-summary').innerHTML = `
+      <div class="cmp-box"><span class="muted">این ماه</span><strong>${formatMoney(cmp.current_expense)}</strong></div>
+      <div class="cmp-box"><span class="muted">ماه قبل</span><strong>${formatMoney(cmp.previous_expense)}</strong></div>
+      <div class="cmp-box"><span class="muted">تغییر کل</span><strong>${changeCell(cmp)}</strong></div>
+    `;
+
+    const empty = cmp.categories.length === 0;
+    $('cmp-empty').classList.toggle('hidden', !empty);
+    $('cmp-body').innerHTML = cmp.categories
+      .map((c) => `<tr>
+        <td>${escapeHtml(c.category_name)}</td>
+        <td>${formatMoney(c.current)}</td>
+        <td>${formatMoney(c.previous)}</td>
+        <td>${changeCell(c)}</td>
+      </tr>`)
+      .join('');
+  }
+
+  // ---------- شروع ----------
+  (async () => {
+    try {
+      const res = await apiFetch('/api/analytics/report/');
+      if (!res.ok) { alert('دریافت گزارش با خطا روبه‌رو شد.'); return; }
+      const report = await res.json();
+
+      $('month-label').textContent = monthTitle(report.month);
+      renderInsights(report.insights);
+      renderHealth(report.health_score);
+      renderForecast(report.forecast);
+      renderComparison(report.comparison);
+    } catch (error) {
+      if (error.message !== 'unauthorized') alert('ارتباط با سرور برقرار نشد.');
+    }
+  })();
+</script>
+{% endblock %}
+/* ---------- تحلیل مالی ---------- */
+.section-title { margin: 0 0 0.75rem; font-size: 1.05rem; }
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.insights { margin: 0; padding-inline-start: 1.25rem; }
+.insights li { margin-bottom: 0.4rem; }
+
+.score-wrap { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+
+.score-ring {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5e7eb;
+  flex-shrink: 0;
+}
+
+.score-inner {
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.score-inner strong { font-size: 2rem; line-height: 1.2; }
+
+.score-parts { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 0.75rem; }
+.score-part-head { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.25rem; }
+
+.forecast-big { display: flex; flex-direction: column; margin-bottom: 0.75rem; }
+.forecast-big strong { font-size: 1.6rem; }
+.day-note { font-size: 0.85rem; margin: 0.25rem 0 0.75rem; }
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cmp-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+}
+.cmp-box {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+}
+.cmp-box strong { font-size: 1.1rem; }
