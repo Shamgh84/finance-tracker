@@ -1,10 +1,207 @@
 {% extends 'app_base.html' %}
+{% load static %}
 
 {% block title %}داشبورد | مدیریت مالی شخصی{% endblock %}
 
 {% block page %}
-<div class="card">
+<div class="page-head">
   <h2>داشبورد</h2>
-  <p>نمودارها و آمار را در قدم‌های بعدی اضافه می‌کنیم.</p>
+  <div class="inline-field">
+    <label for="f-month">ماه</label>
+    <input id="f-month" type="month" class="ltr">
+  </div>
 </div>
+
+<section class="stat-grid">
+  <div class="card stat-card">
+    <span class="muted">درآمد این ماه</span>
+    <strong id="s-income" class="amount-income">—</strong>
+  </div>
+  <div class="card stat-card">
+    <span class="muted">هزینه‌ی این ماه</span>
+    <strong id="s-expense" class="amount-expense">—</strong>
+  </div>
+  <div class="card stat-card">
+    <span class="muted">تراز این ماه</span>
+    <strong id="s-net">—</strong>
+  </div>
+  <div class="card stat-card">
+    <span class="muted">موجودی کل</span>
+    <strong id="s-balance">—</strong>
+  </div>
+</section>
+
+<section class="charts-grid">
+  <div class="card">
+    <div class="chart-head">
+      <h3>سهم هر دسته</h3>
+      <select id="c-type" class="small-select">
+        <option value="expense">هزینه‌ها</option>
+        <option value="income">درآمدها</option>
+      </select>
+    </div>
+    <div class="chart-box"><canvas id="pie-chart"></canvas></div>
+    <p id="pie-empty" class="muted hidden">در این ماه تراکنشی ثبت نشده است.</p>
+  </div>
+
+  <div class="card">
+    <div class="chart-head">
+      <h3>روند درآمد و هزینه</h3>
+      <select id="t-months" class="small-select">
+        <option value="6">۶ ماه اخیر</option>
+        <option value="12">۱۲ ماه اخیر</option>
+      </select>
+    </div>
+    <div class="chart-box"><canvas id="trend-chart"></canvas></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{% static 'js/chart.umd.min.js' %}"></script>
+<script>
+  const charts = { pie: null, trend: null };
+
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.font.family = 'Vazirmatn, Tahoma, sans-serif';
+    Chart.defaults.color = '#4b5563';
+  }
+
+  function pad(number) { return String(number).padStart(2, '0'); }
+
+  function currentMonthValue() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  }
+
+  // بازه‌ی ماه انتخاب‌شده را به صورت date_from و date_to برمی‌گرداند
+  function selectedRange() {
+    const [year, month] = $('f-month').value.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    return {
+      date_from: `${year}-${pad(month)}-01`,
+      date_to: `${year}-${pad(month)}-${pad(lastDay)}`,
+    };
+  }
+
+  function monthLabel(value) {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(year, month - 1, 1).toLocaleDateString(
+      'fa-IR-u-ca-gregory', { month: 'short', year: 'numeric' }
+    );
+  }
+
+  const moneyTick = (value) => Number(value).toLocaleString('fa-IR');
+
+  // ---------- کارت‌های آماری ----------
+  async function loadSummary() {
+    const params = new URLSearchParams(selectedRange());
+    const res = await apiFetch(`/api/analytics/summary/?${params}`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    $('s-income').textContent = formatMoney(data.period_income);
+    $('s-expense').textContent = formatMoney(data.period_expense);
+
+    const net = Number(data.period_net);
+    $('s-net').textContent = formatMoney(net);
+    $('s-net').className = net >= 0 ? 'amount-income' : 'amount-expense';
+
+    const balance = Number(data.balance);
+    $('s-balance').textContent = formatMoney(balance);
+    $('s-balance').className = balance >= 0 ? 'amount-income' : 'amount-expense';
+  }
+
+  // ---------- نمودار دایره‌ای ----------
+  async function loadBreakdown() {
+    const params = new URLSearchParams({ ...selectedRange(), type: $('c-type').value });
+    const res = await apiFetch(`/api/analytics/by-category/?${params}`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (charts.pie) { charts.pie.destroy(); charts.pie = null; }
+    const empty = data.categories.length === 0;
+    $('pie-empty').classList.toggle('hidden', !empty);
+    $('pie-chart').classList.toggle('hidden', empty);
+    if (empty || typeof Chart === 'undefined') return;
+
+    charts.pie = new Chart($('pie-chart'), {
+      type: 'doughnut',
+      data: {
+        labels: data.categories.map((c) => c.category_name),
+        datasets: [{
+          data: data.categories.map((c) => Number(c.total)),
+          backgroundColor: data.categories.map((c) => c.color),
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', rtl: true, labels: { usePointStyle: true } },
+          tooltip: {
+            rtl: true,
+            callbacks: {
+              label: (item) => {
+                const c = data.categories[item.dataIndex];
+                const percent = Number(c.percent).toLocaleString('fa-IR');
+                return ` ${c.category_name}: ${formatMoney(c.total)} (${percent}٪)`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  // ---------- نمودار روند ----------
+  async function loadTrend() {
+    const res = await apiFetch(`/api/analytics/trend/?months=${$('t-months').value}`);
+    if (!res.ok) return;
+    const rows = await res.json();
+
+    if (charts.trend) { charts.trend.destroy(); charts.trend = null; }
+    if (typeof Chart === 'undefined') return;
+
+    charts.trend = new Chart($('trend-chart'), {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) => monthLabel(r.month)),
+        datasets: [
+          { label: 'درآمد', data: rows.map((r) => Number(r.income)), backgroundColor: '#16a34a' },
+          { label: 'هزینه', data: rows.map((r) => Number(r.expense)), backgroundColor: '#dc2626' },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { callback: moneyTick } } },
+        plugins: {
+          legend: { rtl: true, labels: { usePointStyle: true } },
+          tooltip: {
+            rtl: true,
+            callbacks: {
+              label: (item) => ` ${item.dataset.label}: ${formatMoney(item.parsed.y)}`,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  function loadMonthData() {
+    loadSummary();
+    loadBreakdown();
+  }
+
+  $('f-month').addEventListener('change', loadMonthData);
+  $('c-type').addEventListener('change', loadBreakdown);
+  $('t-months').addEventListener('change', loadTrend);
+
+  // ---------- شروع ----------
+  $('f-month').value = currentMonthValue();
+  if (typeof Chart === 'undefined') {
+    alert('فایل Chart.js پیدا نشد. فایل static/js/chart.umd.min.js را بررسی کنید.');
+  }
+  loadMonthData();
+  loadTrend();
+</script>
 {% endblock %}

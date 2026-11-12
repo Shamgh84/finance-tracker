@@ -267,3 +267,47 @@ body {
 .status-exceeded { background: #fee2e2; color: var(--danger); }
 
 .budget-card .actions { margin-top: 0.25rem; }
+
+/* ---------- داشبورد ---------- */
+.inline-field { display: flex; align-items: center; gap: 0.5rem; }
+.inline-field input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.stat-card { display: flex; flex-direction: column; gap: 0.25rem; }
+.stat-card strong { font-size: 1.4rem; }
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.chart-head h3 { margin: 0; font-size: 1.05rem; }
+
+.small-select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+
+.chart-box { position: relative; height: 320px; }
