@@ -12,12 +12,16 @@
 
 <section class="card filters">
   <div class="form-group">
-    <label for="f-year">سال (میلادی)</label>
-    <input id="f-year" type="number" min="2000" max="2100" class="ltr">
+    <label for="f-year">سال (شمسی)</label>
+    <input id="f-year" type="number" min="1300" max="1600" class="ltr">
   </div>
   <div class="form-group">
-    <label for="f-month">ماه (میلادی)</label>
+    <label for="f-month">ماه</label>
     <select id="f-month"></select>
+  </div>
+  <div class="form-group">
+    <label>بازه‌ی میلادی این ماه</label>
+    <div id="f-range" class="range-note"></div>
   </div>
 </section>
 
@@ -34,12 +38,13 @@
         <select id="m-category" required></select>
       </div>
       <div class="form-group">
-        <label for="m-year">سال (میلادی)</label>
-        <input id="m-year" type="number" min="2000" max="2100" class="ltr" required>
+        <label for="m-year">سال (شمسی)</label>
+        <input id="m-year" type="number" min="1300" max="1600" class="ltr" required>
       </div>
       <div class="form-group">
-        <label for="m-month">ماه (میلادی)</label>
+        <label for="m-month">ماه</label>
         <select id="m-month" required></select>
+        <div id="m-range" class="range-note"></div>
       </div>
       <div class="form-group">
         <label for="m-limit">سقف بودجه</label>
@@ -60,7 +65,7 @@
 
 {% block page_scripts %}
 <script>
-  const now = new Date();
+  const nowJ = Jalali.today();
   const state = { categories: [], items: {}, editingId: null };
 
   const STATUS_LABELS = {
@@ -69,13 +74,23 @@
     exceeded: 'عبور از سقف',
   };
 
-  function monthName(month) {
-    return new Date(2000, month - 1, 1).toLocaleDateString('fa-IR-u-ca-gregory', { month: 'long' });
-  }
-
   function fillMonthSelect(select) {
     select.innerHTML = '';
-    for (let m = 1; m <= 12; m++) select.add(new Option(`${m} - ${monthName(m)}`, m));
+    Jalali.MONTHS.forEach((name, i) =>
+      select.add(new Option(`${Jalali.fa(i + 1)} - ${name}`, i + 1))
+    );
+  }
+
+  // بازه‌ی میلادی ماه انتخاب‌شده را زیر لیست نشان می‌دهد
+  function showRange(yearInput, monthSelect, target) {
+    const year = Number(yearInput.value);
+    const month = Number(monthSelect.value);
+    if (!year || !month || year < 1300 || year > 1600) {
+      target.innerHTML = '';
+      return;
+    }
+    const range = Jalali.monthRange(year, month);
+    target.innerHTML = Jalali.rangeHtml(range.from, range.to);
   }
 
   // ---------- هشدارهای ماه جاری ----------
@@ -100,6 +115,7 @@
   async function loadBudgets() {
     const year = $('f-year').value;
     const month = $('f-month').value;
+    showRange($('f-year'), $('f-month'), $('f-range'));
     if (!year) return;
 
     const res = await apiFetch(`/api/budgets/?year=${year}&month=${month}`);
@@ -124,6 +140,7 @@
         <strong>${escapeHtml(b.category_name)}</strong>
         <span class="status-badge status-${b.status}">${STATUS_LABELS[b.status]}</span>
       </div>
+      <div class="muted">${Jalali.monthTitle(b.year, b.month)} · ${Jalali.rangeHtml(b.start_date, b.end_date)}</div>
       <div class="progress"><div class="progress-bar progress-${b.status}" style="width:${barWidth}%"></div></div>
       <div class="budget-stats">
         <span>مصرف: ${formatMoney(b.spent)} از ${formatMoney(b.limit_amount)}</span>
@@ -157,6 +174,7 @@
     $('m-month').value = budget ? budget.month : $('f-month').value;
     $('m-limit').value = budget ? budget.limit_amount : '';
     $('m-threshold').value = budget ? budget.alert_threshold : 80;
+    showRange($('m-year'), $('m-month'), $('m-range'));
     $('modal').classList.remove('hidden');
   }
 
@@ -227,13 +245,15 @@
   });
   $('f-year').addEventListener('change', loadBudgets);
   $('f-month').addEventListener('change', loadBudgets);
+  $('m-year').addEventListener('input', () => showRange($('m-year'), $('m-month'), $('m-range')));
+  $('m-month').addEventListener('change', () => showRange($('m-year'), $('m-month'), $('m-range')));
 
   // ---------- شروع ----------
   (async () => {
     fillMonthSelect($('f-month'));
     fillMonthSelect($('m-month'));
-    $('f-year').value = now.getFullYear();
-    $('f-month').value = now.getMonth() + 1;
+    $('f-year').value = nowJ.year;
+    $('f-month').value = nowJ.month;
 
     const res = await apiFetch('/api/categories/');
     if (res.ok) state.categories = await res.json();

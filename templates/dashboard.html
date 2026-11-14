@@ -6,11 +6,18 @@
 {% block page %}
 <div class="page-head">
   <h2>داشبورد</h2>
-  <div class="inline-field">
-    <label for="f-month">ماه</label>
-    <input id="f-month" type="month" class="ltr">
+  <div class="month-picker">
+    <div class="inline-field">
+      <label for="f-year">سال</label>
+      <input id="f-year" type="number" min="1300" max="1600" class="ltr year-input">
+    </div>
+    <div class="inline-field">
+      <label for="f-month">ماه</label>
+      <select id="f-month" class="small-select"></select>
+    </div>
   </div>
 </div>
+<p id="range-note" class="range-note"></p>
 
 <section class="stat-grid">
   <div class="card stat-card">
@@ -61,34 +68,32 @@
 <script src="{% static 'js/chart.umd.min.js' %}"></script>
 <script>
   const charts = { pie: null, trend: null };
+  const nowJ = Jalali.today();
 
   if (typeof Chart !== 'undefined') {
     Chart.defaults.font.family = 'Vazirmatn, Tahoma, sans-serif';
     Chart.defaults.color = '#4b5563';
   }
 
-  function pad(number) { return String(number).padStart(2, '0'); }
-
-  function currentMonthValue() {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  function fillMonthSelect(select) {
+    select.innerHTML = '';
+    Jalali.MONTHS.forEach((name, i) => select.add(new Option(name, i + 1)));
   }
 
-  // بازه‌ی ماه انتخاب‌شده را به صورت date_from و date_to برمی‌گرداند
+  function monthIsValid() {
+    const year = Number($('f-year').value);
+    return year >= 1300 && year <= 1600 && Number($('f-month').value) >= 1;
+  }
+
+  // بازه‌ی میلادی ماه شمسی انتخاب‌شده (برای فراخوانی API)
   function selectedRange() {
-    const [year, month] = $('f-month').value.split('-').map(Number);
-    const lastDay = new Date(year, month, 0).getDate();
-    return {
-      date_from: `${year}-${pad(month)}-01`,
-      date_to: `${year}-${pad(month)}-${pad(lastDay)}`,
-    };
+    const range = Jalali.monthRange(Number($('f-year').value), Number($('f-month').value));
+    return { date_from: range.from, date_to: range.to };
   }
 
-  function monthLabel(value) {
+  function trendLabel(value) {
     const [year, month] = value.split('-').map(Number);
-    return new Date(year, month - 1, 1).toLocaleDateString(
-      'fa-IR-u-ca-gregory', { month: 'short', year: 'numeric' }
-    );
+    return Jalali.monthTitle(year, month);
   }
 
   const moneyTick = (value) => Number(value).toLocaleString('fa-IR');
@@ -153,7 +158,7 @@
     });
   }
 
-  // ---------- نمودار روند ----------
+  // ---------- نمودار روند (ماه‌های شمسی) ----------
   async function loadTrend() {
     const res = await apiFetch(`/api/analytics/trend/?months=${$('t-months').value}`);
     if (!res.ok) return;
@@ -165,7 +170,7 @@
     charts.trend = new Chart($('trend-chart'), {
       type: 'bar',
       data: {
-        labels: rows.map((r) => monthLabel(r.month)),
+        labels: rows.map((r) => trendLabel(r.month)),
         datasets: [
           { label: 'درآمد', data: rows.map((r) => Number(r.income)), backgroundColor: '#16a34a' },
           { label: 'هزینه', data: rows.map((r) => Number(r.expense)), backgroundColor: '#dc2626' },
@@ -179,6 +184,11 @@
           tooltip: {
             rtl: true,
             callbacks: {
+              // زیر عنوان هر ماه، بازه‌ی میلادی آن نوشته می‌شود
+              afterTitle: (items) => {
+                const row = rows[items[0].dataIndex];
+                return `${Jalali.formatGregorian(row.date_from)} – ${Jalali.formatGregorian(row.date_to)}`;
+              },
               label: (item) => ` ${item.dataset.label}: ${formatMoney(item.parsed.y)}`,
             },
           },
@@ -188,16 +198,22 @@
   }
 
   function loadMonthData() {
+    if (!monthIsValid()) return;
+    const range = selectedRange();
+    $('range-note').innerHTML = `بازه‌ی میلادی: ${Jalali.rangeHtml(range.date_from, range.date_to)}`;
     loadSummary();
     loadBreakdown();
   }
 
+  $('f-year').addEventListener('change', loadMonthData);
   $('f-month').addEventListener('change', loadMonthData);
   $('c-type').addEventListener('change', loadBreakdown);
   $('t-months').addEventListener('change', loadTrend);
 
   // ---------- شروع ----------
-  $('f-month').value = currentMonthValue();
+  fillMonthSelect($('f-month'));
+  $('f-year').value = nowJ.year;
+  $('f-month').value = nowJ.month;
   if (typeof Chart === 'undefined') {
     alert('فایل Chart.js پیدا نشد. فایل static/js/chart.umd.min.js را بررسی کنید.');
   }

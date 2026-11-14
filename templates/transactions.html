@@ -29,12 +29,12 @@
     <select id="f-category"></select>
   </div>
   <div class="form-group">
-    <label for="f-from">از تاریخ</label>
-    <input id="f-from" type="date">
+    <label>از تاریخ</label>
+    <div id="f-from"></div>
   </div>
   <div class="form-group">
-    <label for="f-to">تا تاریخ</label>
-    <input id="f-to" type="date">
+    <label>تا تاریخ</label>
+    <div id="f-to"></div>
   </div>
   <div class="form-group">
     <button class="btn btn-outline btn-block" id="f-reset" type="button">پاک کردن فیلترها</button>
@@ -46,7 +46,7 @@
     <table class="table">
       <thead>
         <tr>
-          <th>تاریخ</th>
+          <th>تاریخ (شمسی و میلادی)</th>
           <th>دسته</th>
           <th>توضیحات</th>
           <th>مبلغ</th>
@@ -86,8 +86,8 @@
         <input id="m-amount" type="number" min="0.01" step="0.01" class="ltr" required>
       </div>
       <div class="form-group">
-        <label for="m-date">تاریخ</label>
-        <input id="m-date" type="date" required>
+        <label>تاریخ</label>
+        <div id="m-date"></div>
       </div>
       <div class="form-group">
         <label for="m-desc">توضیحات</label>
@@ -108,14 +108,12 @@
   const state = { page: 1, categories: [], items: {}, editingId: null };
   let searchTimer = null;
 
-  const typeLabel = (type) => (type === 'income' ? 'درآمد' : 'هزینه');
+  // انتخاب‌گرهای تاریخ شمسی (مقدارشان همیشه تاریخ میلادی است)
+  const fromPicker = DatePicker.create($('f-from'), { optional: true });
+  const toPicker = DatePicker.create($('f-to'), { optional: true });
+  const mDate = DatePicker.create($('m-date'));
 
-  function todayString() {
-    const d = new Date();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${d.getFullYear()}-${month}-${day}`;
-  }
+  const typeLabel = (type) => (type === 'income' ? 'درآمد' : 'هزینه');
 
   // ---------- دسته‌ها ----------
   function fillFilterCategories() {
@@ -142,16 +140,15 @@
   }
 
   // ---------- لیست ----------
-    function filterParams() {
+  function filterParams() {
     const params = new URLSearchParams();
-    const fields = {
-      search: 'f-search', type: 'f-type', category: 'f-category',
-      date_from: 'f-from', date_to: 'f-to',
-    };
+    const fields = { search: 'f-search', type: 'f-type', category: 'f-category' };
     for (const [key, id] of Object.entries(fields)) {
       const value = $(id).value.trim();
       if (value) params.set(key, value);
     }
+    if (fromPicker.value) params.set('date_from', fromPicker.value);
+    if (toPicker.value) params.set('date_to', toPicker.value);
     return params;
   }
 
@@ -178,7 +175,7 @@
       .map((t) => {
         const sign = t.category_type === 'income' ? '+' : '−';
         return `<tr>
-          <td>${formatDate(t.date)}</td>
+          <td>${Jalali.dual(t.date)}</td>
           <td>${escapeHtml(t.category_name)}
               <span class="badge badge-${t.category_type}">${typeLabel(t.category_type)}</span></td>
           <td>${escapeHtml(t.description) || '—'}</td>
@@ -209,13 +206,13 @@
       $('m-type').value = transaction.category_type;
       fillFormCategories(transaction.category);
       $('m-amount').value = transaction.amount;
-      $('m-date').value = transaction.date;
+      mDate.set(transaction.date);
       $('m-desc').value = transaction.description;
     } else {
       $('m-type').value = 'expense';
       fillFormCategories();
       $('m-amount').value = '';
-      $('m-date').value = todayString();
+      mDate.set('');          // یعنی امروز
       $('m-desc').value = '';
     }
     $('modal').classList.remove('hidden');
@@ -234,7 +231,7 @@
     const body = {
       category: Number($('m-category').value),
       amount: $('m-amount').value,
-      date: $('m-date').value,
+      date: mDate.value,
       description: $('m-desc').value.trim(),
     };
 
@@ -272,31 +269,7 @@
     }
   });
 
-    $('export-btn').addEventListener('click', async () => {
-    const res = await apiFetch(`/api/transactions/export/?${filterParams()}`);
-    if (!res.ok) { alert('دریافت فایل با خطا روبه‌رو شد.'); return; }
-
-    const url = URL.createObjectURL(await res.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'transactions.csv';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  });  $('export-btn').addEventListener('click', async () => {
-    const res = await apiFetch(`/api/transactions/export/?${filterParams()}`);
-    if (!res.ok) { alert('دریافت فایل با خطا روبه‌رو شد.'); return; }
-
-    const url = URL.createObjectURL(await res.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'transactions.csv';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  });  $('export-btn').addEventListener('click', async () => {
+  $('export-btn').addEventListener('click', async () => {
     const res = await apiFetch(`/api/transactions/export/?${filterParams()}`);
     if (!res.ok) { alert('دریافت فایل با خطا روبه‌رو شد.'); return; }
 
@@ -309,7 +282,6 @@
     link.remove();
     URL.revokeObjectURL(url);
   });
-  
 
   $('add-btn').addEventListener('click', () => openModal(null));
   $('m-cancel').addEventListener('click', closeModal);
@@ -334,11 +306,14 @@
     fillFilterCategories();
     applyFilters();
   });
-  ['f-category', 'f-from', 'f-to'].forEach((id) =>
-    $(id).addEventListener('change', applyFilters)
-  );
+  $('f-category').addEventListener('change', applyFilters);
+  fromPicker.onChange(applyFilters);
+  toPicker.onChange(applyFilters);
+
   $('f-reset').addEventListener('click', () => {
-    ['f-search', 'f-type', 'f-from', 'f-to'].forEach((id) => ($(id).value = ''));
+    ['f-search', 'f-type'].forEach((id) => ($(id).value = ''));
+    fromPicker.set('');
+    toPicker.set('');
     fillFilterCategories();
     applyFilters();
   });

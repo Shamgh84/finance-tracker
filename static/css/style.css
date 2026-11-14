@@ -312,3 +312,30 @@ body {
 
 .chart-box { position: relative; height: 320px; }
 .head-actions { display: flex; gap: 0.5rem; }
+/* ---------- تاریخ شمسی و میلادی ---------- */
+.latin { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+
+.greg-date {
+  font-size: 0.8rem;
+  color: var(--muted);
+  direction: ltr;
+  text-align: right;
+}
+
+.range-note { font-size: 0.9rem; color: var(--muted); margin: 0.25rem 0 0.75rem; }
+.filters .range-note { padding-top: 0.6rem; margin: 0; }
+
+.month-picker { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+.year-input { width: 90px; }
+
+.jdate { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.jdate select {
+  width: auto;
+  flex: 1 1 70px;
+  padding: 0.55rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+.jd-greg { flex-basis: 100%; font-size: 0.8rem; }
