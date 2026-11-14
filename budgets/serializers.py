@@ -17,7 +17,7 @@ class BudgetSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'start_date', 'end_date')
 
-    def get_period_label(self, obj):
+    def get_period_label(self, obj)  -> str:
         return month_label(obj.year, obj.month)
 
     def validate_category(self, category):

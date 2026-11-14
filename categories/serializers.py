@@ -12,7 +12,7 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'type', 'color', 'is_default')
         read_only_fields = ('id', 'is_default')
 
-    def get_is_default(self, obj):
+    def get_is_default(self, obj) -> bool:
         return obj.user_id is None
 
     def validate(self, attrs):

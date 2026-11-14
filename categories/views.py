@@ -13,6 +13,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnlyDefault]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Category.objects.none()
         user = self.request.user
         return Category.objects.filter(Q(user=user) | Q(user__isnull=True))
 

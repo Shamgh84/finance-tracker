@@ -37,6 +37,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date', 'amount', 'created_at']
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Transaction.objects.none()
         # هر کاربر فقط تراکنش‌های خودش را می‌بیند
         return Transaction.objects.filter(
             user=self.request.user
