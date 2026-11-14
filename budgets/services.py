@@ -38,8 +38,8 @@ def get_spent(budget):
     total = Transaction.objects.filter(
         user=budget.user,
         category=budget.category,
-        date__year=budget.year,
-        date__month=budget.month,
+        date__gte=budget.start_date,
+        date__lte=budget.end_date,
     ).aggregate(total=Sum('amount'))['total']
     return total or Decimal('0')
 
@@ -50,8 +50,8 @@ def annotate_spent(queryset):
         Transaction.objects.filter(
             user=OuterRef('user'),
             category=OuterRef('category'),
-            date__year=OuterRef('year'),
-            date__month=OuterRef('month'),
+            date__gte=OuterRef('start_date'),
+            date__lte=OuterRef('end_date'),
         )
         .order_by()
         .values('user')

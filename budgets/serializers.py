@@ -1,20 +1,24 @@
 from rest_framework import serializers
+from config.jalali import month_label
 
 from categories.models import Category
 from . import services
 from .models import Budget
 
-
 class BudgetSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
+    period_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Budget
         fields = (
-            'id', 'category', 'category_name', 'year', 'month',
-            'limit_amount', 'alert_threshold',
+            'id', 'category', 'category_name', 'year', 'month', 'period_label',
+            'start_date', 'end_date', 'limit_amount', 'alert_threshold',
         )
-        read_only_fields = ('id',)
+        read_only_fields = ('id', 'start_date', 'end_date')
+
+    def get_period_label(self, obj):
+        return month_label(obj.year, obj.month)
 
     def validate_category(self, category):
         user = self.context['request'].user

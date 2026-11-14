@@ -1,4 +1,3 @@
-from datetime import date
 from decimal import Decimal
 
 from django.test import SimpleTestCase
@@ -7,6 +6,7 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from budgets.models import Budget
 from categories.models import Category
+from config.jalali import from_jalali as g
 from transactions.models import Transaction
 from . import services
 
@@ -78,6 +78,8 @@ class PureFunctionTests(SimpleTestCase):
 
 
 class AnalysisTests(APITestCase):
+    """همه‌ی تاریخ‌ها با تقویم شمسی ساخته می‌شوند: g(سال، ماه، روز)."""
+
     def setUp(self):
         self.u1 = User.objects.create_user(
             username='u1', email='u1@example.com', password='Pass12345!x'
@@ -98,54 +100,57 @@ class AnalysisTests(APITestCase):
         )
 
     def test_comparison_current_month_uses_same_day_cap(self):
-        today = date(2026, 6, 15)
-        self.add(self.u1, self.food, 300, date(2026, 6, 5))
-        self.add(self.u1, self.other, 50, date(2026, 6, 10))
-        self.add(self.u1, self.food, 100, date(2026, 5, 10))
-        self.add(self.u1, self.food, 400, date(2026, 5, 20))   # بعد از روز ۱۵، حساب نمی‌شود
-        self.add(self.u2, self.food, 999, date(2026, 6, 5))    # کاربر دیگر
+        today = g(1405, 3, 15)
+        self.add(self.u1, self.food, 300, g(1405, 3, 5))
+        self.add(self.u1, self.other, 50, g(1405, 3, 10))
+        self.add(self.u1, self.food, 100, g(1405, 2, 10))
+        self.add(self.u1, self.food, 400, g(1405, 2, 20))   # بعد از روز ۱۵، حساب نمی‌شود
+        self.add(self.u2, self.food, 999, g(1405, 3, 5))    # کاربر دیگر
 
-        result = services.get_month_comparison(self.u1, 2026, 6, today)
+        result = services.get_month_comparison(self.u1, 1405, 3, today)
         self.assertEqual(result['compared_through_day'], 15)
         self.assertEqual(result['current_expense'], Decimal('350'))
         self.assertEqual(result['previous_expense'], Decimal('100'))
         self.assertEqual(result['trend'], 'up')
+        self.assertEqual(result['date_from'], g(1405, 3, 1))
+        self.assertEqual(result['previous_date_from'], g(1405, 2, 1))
 
         by_name = {c['category_name']: c for c in result['categories']}
         self.assertEqual(by_name['خوراک']['change_percent'], Decimal('200.0'))
         self.assertEqual(by_name[self.other.name]['trend'], 'new')
 
     def test_comparison_completed_month_has_no_cap(self):
-        today = date(2026, 6, 15)
-        self.add(self.u1, self.food, 100, date(2026, 4, 10))
-        self.add(self.u1, self.food, 400, date(2026, 5, 20))
+        today = g(1405, 3, 15)
+        self.add(self.u1, self.food, 100, g(1405, 1, 10))
+        self.add(self.u1, self.food, 400, g(1405, 2, 20))
 
-        result = services.get_month_comparison(self.u1, 2026, 5, today)
+        result = services.get_month_comparison(self.u1, 1405, 2, today)
         self.assertIsNone(result['compared_through_day'])
         self.assertEqual(result['current_expense'], Decimal('400'))
         self.assertEqual(result['previous_expense'], Decimal('100'))
 
     def test_forecast(self):
-        today = date(2026, 6, 15)
-        self.add(self.u1, self.food, 1500, date(2026, 6, 3))
-        self.add(self.u1, self.salary, 9999, date(2026, 6, 2))   # درآمد است
-        self.add(self.u1, self.food, 777, date(2026, 6, 20))     # آینده است
-        self.add(self.u1, self.food, 2000, date(2026, 5, 10))
+        today = g(1405, 3, 15)                                    # خرداد ۳۱ روز دارد
+        self.add(self.u1, self.food, 1500, g(1405, 3, 3))
+        self.add(self.u1, self.salary, 9999, g(1405, 3, 2))       # درآمد است
+        self.add(self.u1, self.food, 777, g(1405, 3, 20))         # آینده است
+        self.add(self.u1, self.food, 2000, g(1405, 2, 10))
 
         result = services.get_forecast(self.u1, today)
         self.assertEqual(result['spent_so_far'], Decimal('1500'))
         self.assertEqual(result['daily_average'], Decimal('100.00'))
-        self.assertEqual(result['projected_expense'], Decimal('3000.00'))
+        self.assertEqual(result['projected_expense'], Decimal('3100.00'))
         self.assertEqual(result['previous_month_expense'], Decimal('2000'))
-        self.assertEqual(result['days_in_month'], 30)
+        self.assertEqual(result['days_in_month'], 31)
+        self.assertEqual(result['month'], '1405-03')
 
     def test_health_score_counts_exceeded_budgets(self):
-        today = date(2026, 6, 15)
+        today = g(1405, 3, 15)
         Budget.objects.create(
-            user=self.u1, category=self.food, year=2026, month=6, limit_amount=1000
+            user=self.u1, category=self.food, year=1405, month=3, limit_amount=1000
         )
-        self.add(self.u1, self.salary, 5000, date(2026, 6, 2))
-        self.add(self.u1, self.food, 1200, date(2026, 6, 3))
+        self.add(self.u1, self.salary, 5000, g(1405, 3, 2))
+        self.add(self.u1, self.food, 1200, g(1405, 3, 3))
 
         result = services.get_health_score(self.u1, today)
         self.assertEqual(result['budgets'], {'count': 1, 'exceeded': 1})
@@ -158,13 +163,17 @@ class AnalysisTests(APITestCase):
         self.assertIn('categories', res.data)
 
     def test_comparison_requires_year_and_month_together(self):
-        res = self.client.get('/api/analytics/comparison/?year=2026')
+        res = self.client.get('/api/analytics/comparison/?year=1405')
+        self.assertEqual(res.status_code, 400)
+
+    def test_comparison_rejects_gregorian_year(self):
+        res = self.client.get('/api/analytics/comparison/?year=2026&month=11')
         self.assertEqual(res.status_code, 400)
 
     def test_comparison_explicit_month(self):
-        res = self.client.get('/api/analytics/comparison/?year=2026&month=5')
+        res = self.client.get('/api/analytics/comparison/?year=1405&month=2')
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data['month'], '2026-05')
+        self.assertEqual(res.data['month'], '1405-02')
 
     def test_forecast_endpoint(self):
         res = self.client.get('/api/analytics/forecast/')

@@ -1,13 +1,17 @@
-import calendar
-from datetime import date
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db.models import Q, Sum
-from django.db.models.functions import TruncMonth
 
-from transactions.models import Transaction
 from budgets.models import Budget
 from budgets.services import annotate_spent
+from config.jalali import (
+    current_jalali_month,
+    jalali_month_range,
+    shift_month,
+    to_jalali,
+)
+from transactions.models import Transaction
 
 ZERO = Decimal('0')
 INCOME = Q(category__type='income')
@@ -15,14 +19,8 @@ EXPENSE = Q(category__type='expense')
 
 
 def month_range(year, month):
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, 1), date(year, month, last_day)
-
-
-def shift_month(year, month, delta):
-    """سال و ماه را به اندازه‌ی delta ماه جابه‌جا می‌کند (delta می‌تواند منفی باشد)."""
-    index = year * 12 + (month - 1) + delta
-    return index // 12, index % 12 + 1
+    """بازه‌ی میلادی یک ماه شمسی."""
+    return jalali_month_range(year, month)
 
 
 def _filter_dates(queryset, date_from, date_to):
@@ -93,45 +91,54 @@ def get_category_breakdown(user, type_, date_from, date_to):
 
 
 def get_monthly_trend(user, months, today):
-    """درآمد و هزینه‌ی چند ماه اخیر؛ ماه‌های بدون تراکنش با صفر پر می‌شوند."""
-    start_year, start_month = shift_month(today.year, today.month, -(months - 1))
-    start = date(start_year, start_month, 1)
+    """درآمد و هزینه‌ی چند ماه شمسی اخیر؛ ماه‌های بدون تراکنش با صفر پر می‌شوند."""
+    end_year, end_month = current_jalali_month(today)
+    start_year, start_month = shift_month(end_year, end_month, -(months - 1))
+    start, _last = month_range(start_year, start_month)
 
+    # ابتدا به تفکیک روز جمع می‌زنیم و بعد در پایتون به ماه شمسی تبدیل می‌کنیم
     rows = (
         Transaction.objects.filter(user=user, date__gte=start)
-        .annotate(m=TruncMonth('date'))
-        .values('m')
+        .values('date')
         .annotate(
             income=Sum('amount', filter=INCOME),
             expense=Sum('amount', filter=EXPENSE),
         )
-        .order_by('m')
+        .order_by()
     )
-    by_month = {(row['m'].year, row['m'].month): row for row in rows}
+    buckets = {}
+    for row in rows:
+        row_year, row_month, _day = to_jalali(row['date'])
+        bucket = buckets.setdefault((row_year, row_month), [ZERO, ZERO])
+        bucket[0] += row['income'] or ZERO
+        bucket[1] += row['expense'] or ZERO
 
     result = []
     for i in range(months):
         year, month = shift_month(start_year, start_month, i)
-        row = by_month.get((year, month))
-        income = (row['income'] if row else None) or ZERO
-        expense = (row['expense'] if row else None) or ZERO
+        income, expense = buckets.get((year, month), (ZERO, ZERO))
+        date_from, date_to = month_range(year, month)
         result.append({
             'month': f'{year}-{month:02d}',
+            'date_from': date_from,
+            'date_to': date_to,
             'income': income,
             'expense': expense,
             'net': income - expense,
         })
     return result
 
+
 # ----------------------------------------------------------------------
 # تحلیل مالی: مقایسه‌ی ماه‌ها، پیش‌بینی، امتیاز سلامت مالی و گزارش
 # ----------------------------------------------------------------------
 
 def get_expense_by_category(user, year, month, day_limit=None):
-    """هزینه‌ی هر دسته در یک ماه؛ با day_limit فقط تا آن روز از ماه حساب می‌شود."""
+    """هزینه‌ی هر دسته در یک ماه شمسی؛ با day_limit فقط تا آن روز از ماه حساب می‌شود."""
     start, end = month_range(year, month)
     if day_limit:
-        end = date(year, month, min(day_limit, end.day))
+        length = (end - start).days + 1
+        end = start + timedelta(days=min(day_limit, length) - 1)
     rows = (
         Transaction.objects.filter(
             user=user, category__type='expense', date__gte=start, date__lte=end
@@ -171,9 +178,11 @@ def _sum_totals(by_category):
 
 
 def get_month_comparison(user, year, month, today):
+    """year و month شمسی‌اند و today تاریخ میلادی امروز است."""
     prev_year, prev_month = shift_month(year, month, -1)
-    is_current = (year, month) == (today.year, today.month)
-    day_limit = today.day if is_current else None
+    today_year, today_month, today_day = to_jalali(today)
+    is_current = (year, month) == (today_year, today_month)
+    day_limit = today_day if is_current else None
 
     current = get_expense_by_category(user, year, month, day_limit)
     previous = get_expense_by_category(user, prev_year, prev_month, day_limit)
@@ -194,9 +203,15 @@ def get_month_comparison(user, year, month, today):
 
     current_expense = _sum_totals(current)
     previous_expense = _sum_totals(previous)
+    start, end = month_range(year, month)
+    prev_start, prev_end = month_range(prev_year, prev_month)
     return {
         'month': f'{year}-{month:02d}',
         'previous_month': f'{prev_year}-{prev_month:02d}',
+        'date_from': start,
+        'date_to': end,
+        'previous_date_from': prev_start,
+        'previous_date_to': prev_end,
         'compared_through_day': day_limit,
         'current_expense': current_expense,
         'previous_expense': previous_expense,
@@ -213,22 +228,26 @@ def project_month_end(spent, elapsed_days, days_in_month):
 
 
 def get_forecast(user, today):
-    start, end = month_range(today.year, today.month)
+    year, month, day = to_jalali(today)
+    start, end = month_range(year, month)
+    days_in_month = (end - start).days + 1
     spent = (
         Transaction.objects.filter(
             user=user, category__type='expense', date__gte=start, date__lte=today
         ).aggregate(total=Sum('amount'))['total']
         or ZERO
     )
-    prev_year, prev_month = shift_month(today.year, today.month, -1)
+    prev_year, prev_month = shift_month(year, month, -1)
     previous_expense = _sum_totals(get_expense_by_category(user, prev_year, prev_month))
     return {
-        'month': f'{today.year}-{today.month:02d}',
-        'days_elapsed': today.day,
-        'days_in_month': end.day,
+        'month': f'{year}-{month:02d}',
+        'date_from': start,
+        'date_to': end,
+        'days_elapsed': day,
+        'days_in_month': days_in_month,
         'spent_so_far': spent,
-        'daily_average': (spent / today.day).quantize(Decimal('0.01')),
-        'projected_expense': project_month_end(spent, today.day, end.day),
+        'daily_average': (spent / day).quantize(Decimal('0.01')),
+        'projected_expense': project_month_end(spent, day, days_in_month),
         'previous_month_expense': previous_expense,
     }
 
@@ -298,23 +317,24 @@ def calculate_health_score(
 
 
 def get_health_score(user, today):
-    start, _ = month_range(today.year, today.month)
+    year, month, _day = to_jalali(today)
+    start, _end = month_range(year, month)
     income, expense = _income_expense(
         Transaction.objects.filter(user=user, date__gte=start, date__lte=today)
     )
     forecast = get_forecast(user, today)
 
-    # میانگین هزینه‌ی ۳ ماه قبل (فقط ماه‌هایی که تراکنش داشته‌اند)
+    # میانگین هزینه‌ی ۳ ماه شمسی قبل (فقط ماه‌هایی که تراکنش داشته‌اند)
     previous_totals = []
     for i in range(1, 4):
-        year, month = shift_month(today.year, today.month, -i)
-        total = _sum_totals(get_expense_by_category(user, year, month))
+        prev_year, prev_month = shift_month(year, month, -i)
+        total = _sum_totals(get_expense_by_category(user, prev_year, prev_month))
         if total > 0:
             previous_totals.append(total)
     average = sum(previous_totals, ZERO) / len(previous_totals) if previous_totals else ZERO
 
     budgets = annotate_spent(
-        Budget.objects.filter(user=user, year=today.year, month=today.month)
+        Budget.objects.filter(user=user, year=year, month=month)
     )
     budget_count = 0
     exceeded = 0
@@ -327,7 +347,7 @@ def get_health_score(user, today):
         income, expense, forecast['projected_expense'], average,
         budget_count, exceeded,
     )
-    result['month'] = f'{today.year}-{today.month:02d}'
+    result['month'] = f'{year}-{month:02d}'
     result['income'] = income
     result['expense'] = expense
     result['budgets'] = {'count': budget_count, 'exceeded': exceeded}

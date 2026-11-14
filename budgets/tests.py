@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from categories.models import Category
+from config.jalali import current_jalali_month, jalali_month_range
 from transactions.models import Transaction
 from .models import Budget
 from .services import calculate_status
@@ -42,12 +43,13 @@ class BudgetAPITests(APITestCase):
         ).exclude(pk=self.food.pk).first()
         self.salary = Category.objects.get(user=None, name='حقوق', type='income')
         self.today = timezone.localdate()
+        self.year, self.month = current_jalali_month(self.today)
         self.client.force_authenticate(self.u1)
 
     def make_budget(self, user, category, limit=1000):
         return Budget.objects.create(
             user=user, category=category,
-            year=self.today.year, month=self.today.month, limit_amount=limit,
+            year=self.year, month=self.month, limit_amount=limit,
         )
 
     def spend(self, user, category, amount, date=None):
@@ -56,25 +58,42 @@ class BudgetAPITests(APITestCase):
             date=date or self.today,
         )
 
-    def test_create_budget(self):
+    def test_create_budget_computes_gregorian_range(self):
         res = self.client.post('/api/budgets/', {
-            'category': self.food.pk, 'year': self.today.year,
-            'month': self.today.month, 'limit_amount': '1000000',
+            'category': self.food.pk, 'year': self.year,
+            'month': self.month, 'limit_amount': '1000000',
         })
         self.assertEqual(res.status_code, 201)
-        self.assertEqual(Budget.objects.get().user, self.u1)
+        budget = Budget.objects.get()
+        self.assertEqual(budget.user, self.u1)
+        start, end = jalali_month_range(self.year, self.month)
+        self.assertEqual((budget.start_date, budget.end_date), (start, end))
+
+    def test_gregorian_year_rejected(self):
+        res = self.client.post('/api/budgets/', {
+            'category': self.food.pk, 'year': 2026,
+            'month': 11, 'limit_amount': '1000',
+        })
+        self.assertEqual(res.status_code, 400)
+
+    def test_response_has_period_info(self):
+        self.make_budget(self.u1, self.food)
+        res = self.client.get('/api/budgets/')
+        self.assertIn('period_label', res.data[0])
+        self.assertIn('start_date', res.data[0])
+        self.assertIn('end_date', res.data[0])
 
     def test_income_category_rejected(self):
         res = self.client.post('/api/budgets/', {
-            'category': self.salary.pk, 'year': self.today.year,
-            'month': self.today.month, 'limit_amount': '1000',
+            'category': self.salary.pk, 'year': self.year,
+            'month': self.month, 'limit_amount': '1000',
         })
         self.assertEqual(res.status_code, 400)
 
     def test_duplicate_budget_rejected(self):
         payload = {
-            'category': self.food.pk, 'year': self.today.year,
-            'month': self.today.month, 'limit_amount': '1000',
+            'category': self.food.pk, 'year': self.year,
+            'month': self.month, 'limit_amount': '1000',
         }
         self.assertEqual(self.client.post('/api/budgets/', payload).status_code, 201)
         self.assertEqual(self.client.post('/api/budgets/', payload).status_code, 400)
@@ -93,10 +112,11 @@ class BudgetAPITests(APITestCase):
     def test_spent_counts_only_matching_transactions(self):
         self.make_budget(self.u1, self.food)
         self.spend(self.u1, self.food, 300)
-        last_month = self.today.replace(day=1) - timedelta(days=1)
-        self.spend(self.u1, self.food, 5000, last_month)   # ماه دیگر
-        self.spend(self.u2, self.food, 5000)               # کاربر دیگر
-        self.spend(self.u1, self.other, 5000)              # دسته‌ی دیگر
+        start, end = jalali_month_range(self.year, self.month)
+        self.spend(self.u1, self.food, 5000, start - timedelta(days=1))  # ماه قبل
+        self.spend(self.u1, self.food, 5000, end + timedelta(days=1))    # ماه بعد
+        self.spend(self.u2, self.food, 5000)                             # کاربر دیگر
+        self.spend(self.u1, self.other, 5000)                            # دسته‌ی دیگر
         res = self.client.get('/api/budgets/')
         self.assertEqual(Decimal(str(res.data[0]['spent'])), Decimal('300'))
         self.assertEqual(res.data[0]['status'], 'ok')

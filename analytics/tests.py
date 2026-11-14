@@ -6,8 +6,8 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from categories.models import Category
+from config.jalali import current_jalali_month, jalali_month_range, shift_month
 from transactions.models import Transaction
-from .services import shift_month
 
 
 def D(value):
@@ -28,6 +28,7 @@ class DashboardAPITests(APITestCase):
         ).exclude(pk=self.food.pk).first()
         self.salary = Category.objects.get(user=None, name='حقوق', type='income')
         self.today = timezone.localdate()
+        self.year, self.month = current_jalali_month(self.today)
         self.client.force_authenticate(self.u1)
 
     def add(self, user, category, amount, day):
@@ -35,11 +36,11 @@ class DashboardAPITests(APITestCase):
             user=user, category=category, amount=amount, date=day
         )
 
-    def test_summary_defaults_to_current_month(self):
+    def test_summary_defaults_to_current_jalali_month(self):
         self.add(self.u1, self.salary, 5000, self.today)
         self.add(self.u1, self.food, 1200, self.today)
-        last_month = self.today.replace(day=1) - timedelta(days=1)
-        self.add(self.u1, self.food, 800, last_month)
+        start, _ = jalali_month_range(self.year, self.month)
+        self.add(self.u1, self.food, 800, start - timedelta(days=1))  # ماه شمسی قبل
 
         res = self.client.get('/api/analytics/summary/')
         self.assertEqual(res.status_code, 200)
@@ -85,9 +86,10 @@ class DashboardAPITests(APITestCase):
         self.assertEqual(first['category_name'], 'خوراک')
         self.assertEqual(D(first['percent']), D('75.0'))
 
-    def test_trend_fills_missing_months(self):
-        year, month = shift_month(self.today.year, self.today.month, -2)
-        self.add(self.u1, self.food, 500, date(year, month, 15))
+    def test_trend_fills_missing_jalali_months(self):
+        two_back_year, two_back_month = shift_month(self.year, self.month, -2)
+        start, _ = jalali_month_range(two_back_year, two_back_month)
+        self.add(self.u1, self.food, 500, start + timedelta(days=14))
         self.add(self.u1, self.food, 200, self.today)
 
         res = self.client.get('/api/analytics/trend/?months=3')
@@ -96,7 +98,13 @@ class DashboardAPITests(APITestCase):
         self.assertEqual(D(res.data[0]['expense']), D(500))
         self.assertEqual(D(res.data[1]['expense']), D(0))
         self.assertEqual(D(res.data[2]['expense']), D(200))
-        self.assertEqual(res.data[2]['month'], self.today.strftime('%Y-%m'))
+        self.assertEqual(res.data[2]['month'], f'{self.year}-{self.month:02d}')
+
+    def test_trend_rows_include_gregorian_range(self):
+        res = self.client.get('/api/analytics/trend/?months=2')
+        start, end = jalali_month_range(self.year, self.month)
+        self.assertEqual(res.data[1]['date_from'], start)
+        self.assertEqual(res.data[1]['date_to'], end)
 
     def test_trend_months_limit(self):
         res = self.client.get('/api/analytics/trend/?months=100')

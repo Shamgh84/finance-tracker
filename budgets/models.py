@@ -5,6 +5,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from categories.models import Category
+from config.jalali import jalali_month_range
 
 
 class Budget(models.Model):
@@ -18,12 +19,16 @@ class Budget(models.Model):
         on_delete=models.CASCADE,
         related_name='budgets',
     )
+    # سال و ماه شمسی
     year = models.PositiveSmallIntegerField(
-        validators=[MinValueValidator(2000), MaxValueValidator(2100)]
+        validators=[MinValueValidator(1300), MaxValueValidator(1600)]
     )
     month = models.PositiveSmallIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(12)]
     )
+    # بازه‌ی میلادی همان ماه شمسی (خودکار محاسبه می‌شود)
+    start_date = models.DateField(editable=False)
+    end_date = models.DateField(editable=False)
     limit_amount = models.DecimalField(
         max_digits=15,
         decimal_places=2,
@@ -46,6 +51,10 @@ class Budget(models.Model):
             ),
         ]
         indexes = [models.Index(fields=['user', 'year', 'month'])]
+
+    def save(self, *args, **kwargs):
+        self.start_date, self.end_date = jalali_month_range(self.year, self.month)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'{self.category.name} {self.year}/{self.month}: {self.limit_amount}'

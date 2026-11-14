@@ -4,6 +4,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.jalali import current_jalali_month
 from . import services
 from .serializers import (
     CategoryBreakdownQuerySerializer,
@@ -14,12 +15,12 @@ from .serializers import (
 
 
 def resolve_range(params):
-    """اگر بازه‌ای داده نشده باشد، ماه جاری را برمی‌گرداند."""
+    """اگر بازه‌ای داده نشده باشد، ماه شمسی جاری را برمی‌گرداند."""
     date_from = params.get('date_from')
     date_to = params.get('date_to')
     if date_from is None and date_to is None:
-        today = timezone.localdate()
-        date_from, date_to = services.month_range(today.year, today.month)
+        year, month = current_jalali_month(timezone.localdate())
+        date_from, date_to = services.month_range(year, month)
     return date_from, date_to
 
 
@@ -55,7 +56,7 @@ class CategoryBreakdownView(APIView):
 
 class TrendView(APIView):
     @extend_schema(
-        summary='روند ماهانه‌ی درآمد و هزینه',
+        summary='روند ماهانه‌ی درآمد و هزینه (ماه‌های شمسی)',
         parameters=[TrendQuerySerializer],
         responses=OpenApiTypes.OBJECT,
     )
@@ -73,7 +74,7 @@ class TrendView(APIView):
 
 class ComparisonView(APIView):
     @extend_schema(
-        summary='مقایسه‌ی هزینه‌ی یک ماه با ماه قبل',
+        summary='مقایسه‌ی هزینه‌ی یک ماه شمسی با ماه قبل',
         parameters=[MonthQuerySerializer],
         responses=OpenApiTypes.OBJECT,
     )
@@ -81,8 +82,9 @@ class ComparisonView(APIView):
         query = MonthQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         today = timezone.localdate()
-        year = query.validated_data.get('year', today.year)
-        month = query.validated_data.get('month', today.month)
+        current_year, current_month = current_jalali_month(today)
+        year = query.validated_data.get('year', current_year)
+        month = query.validated_data.get('month', current_month)
         return Response(
             services.get_month_comparison(request.user, year, month, today)
         )
@@ -104,13 +106,12 @@ class ReportView(APIView):
     @extend_schema(summary='گزارش کامل تحلیل مالی ماه جاری', responses=OpenApiTypes.OBJECT)
     def get(self, request):
         today = timezone.localdate()
-        comparison = services.get_month_comparison(
-            request.user, today.year, today.month, today
-        )
+        year, month = current_jalali_month(today)
+        comparison = services.get_month_comparison(request.user, year, month, today)
         forecast = services.get_forecast(request.user, today)
         health = services.get_health_score(request.user, today)
         return Response({
-            'month': f'{today.year}-{today.month:02d}',
+            'month': f'{year}-{month:02d}',
             'insights': services.build_insights(comparison, forecast, health),
             'health_score': health,
             'forecast': forecast,
