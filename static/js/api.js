@@ -105,8 +105,12 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// واحد پول؛ برای ریال، مقدار زیر را به 'ریال' تغییر بده
+const CURRENCY = 'تومان';
+
 function formatMoney(value) {
-  return Number(value).toLocaleString('fa-IR', { maximumFractionDigits: 0 });
+  const number = Number(value).toLocaleString('fa-IR', { maximumFractionDigits: 0 });
+  return `${number} ${CURRENCY}`;
 }
 
 // تاریخ میلادی (YYYY-MM-DD) را به شمسی نمایش می‌دهد
@@ -115,3 +119,28 @@ function formatDate(iso) {
   const [year, month, day] = iso.split('-').map(Number);
   return new Date(year, month - 1, day).toLocaleDateString('fa-IR');
 }
+
+// ---------- فیلد مبلغ با جداکننده‌ی هزارگان ----------
+function normalizeDigits(text) {
+  return String(text)
+    .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+}
+
+function bindMoneyInput(input) {
+  const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  const digitsOf = (text) => normalizeDigits(text).split('.')[0].replace(/\D/g, '');
+  const show = (digits) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+  // خواندن مقدار فقط رقم‌ها را می‌دهد و نوشتن مقدار، آن را با جداکننده نشان می‌دهد
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get() { return digitsOf(native.get.call(input)); },
+    set(v) { native.set.call(input, show(digitsOf(v))); },
+  });
+  input.addEventListener('input', () => {
+    native.set.call(input, show(digitsOf(native.get.call(input))));
+  });
+}
+
+document.querySelectorAll('input[data-money]').forEach(bindMoneyInput);
