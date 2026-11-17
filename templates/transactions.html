@@ -24,9 +24,17 @@
       <option value="expense">هزینه</option>
     </select>
   </div>
-  <div class="form-group">
+    <div class="form-group">
     <label for="f-category">دسته</label>
     <select id="f-category"></select>
+  </div>
+  <div class="form-group">
+    <label for="f-min">حداقل مبلغ (تومان)</label>
+    <input id="f-min" type="text" inputmode="numeric" autocomplete="off" data-money class="ltr">
+  </div>
+  <div class="form-group">
+    <label for="f-max">حداکثر مبلغ (تومان)</label>
+    <input id="f-max" type="text" inputmode="numeric" autocomplete="off" data-money class="ltr">
   </div>
   <div class="form-group">
     <label>از تاریخ</label>
@@ -142,7 +150,7 @@
   // ---------- لیست ----------
   function filterParams() {
     const params = new URLSearchParams();
-    const fields = { search: 'f-search', type: 'f-type', category: 'f-category' };
+    const fields = {search: 'f-search', type: 'f-type', category: 'f-category',min_amount: 'f-min', max_amount: 'f-max',};
     for (const [key, id] of Object.entries(fields)) {
       const value = $(id).value.trim();
       if (value) params.set(key, value);
@@ -307,11 +315,17 @@
     applyFilters();
   });
   $('f-category').addEventListener('change', applyFilters);
+    ['f-min', 'f-max'].forEach((id) =>
+    $(id).addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(applyFilters, 500);
+    })
+  );
   fromPicker.onChange(applyFilters);
   toPicker.onChange(applyFilters);
 
   $('f-reset').addEventListener('click', () => {
-    ['f-search', 'f-type'].forEach((id) => ($(id).value = ''));
+    ['f-search', 'f-type', 'f-min', 'f-max'].forEach((id) => ($(id).value = ''));
     fromPicker.set('');
     toPicker.set('');
     fillFilterCategories();

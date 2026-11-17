@@ -1,0 +1,164 @@
+{% extends 'app_base.html' %}
+
+{% block title %}دسته‌ها | مدیریت مالی شخصی{% endblock %}
+
+{% block page %}
+<div class="page-head">
+  <h2>دسته‌ها</h2>
+  <button class="btn" id="add-btn" type="button">+ دسته‌ی جدید</button>
+</div>
+
+<p class="muted">دسته‌های پیش‌فرض برای همه‌ی کاربران یکی است و قابل تغییر نیست. دسته‌های شخصی فقط برای خودت دیده می‌شوند.</p>
+
+<section class="categories-grid">
+  <div class="card">
+    <h3 class="section-title">دسته‌های هزینه</h3>
+    <div id="list-expense" class="cat-list"></div>
+  </div>
+  <div class="card">
+    <h3 class="section-title">دسته‌های درآمد</h3>
+    <div id="list-income" class="cat-list"></div>
+  </div>
+</section>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h3 id="modal-title"></h3>
+    <div id="form-error" class="alert hidden"></div>
+    <form id="cat-form">
+      <div class="form-group">
+        <label for="m-name">نام دسته</label>
+        <input id="m-name" maxlength="100" required>
+      </div>
+      <div class="form-group">
+        <label for="m-type">نوع</label>
+        <select id="m-type">
+          <option value="expense">هزینه</option>
+          <option value="income">درآمد</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="m-color">رنگ (در نمودارها)</label>
+        <input id="m-color" type="color" value="#4f46e5">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="m-save" type="submit">ذخیره</button>
+        <button class="btn btn-outline" id="m-cancel" type="button">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const state = { categories: [], items: {}, editingId: null };
+
+  const safeColor = (value) => (/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#6c757d');
+
+  function renderItem(c) {
+    const actions = c.is_default
+      ? '<span class="badge badge-default">پیش‌فرض</span>'
+      : `<button class="link-btn" data-edit="${c.id}" type="button">ویرایش</button>
+         <button class="link-btn danger" data-delete="${c.id}" type="button">حذف</button>`;
+    return `<div class="cat-item">
+      <span class="cat-name"><span class="color-dot" style="background:${safeColor(c.color)}"></span>${escapeHtml(c.name)}</span>
+      <span class="cat-actions">${actions}</span>
+    </div>`;
+  }
+
+  async function loadCategories() {
+    const res = await apiFetch('/api/categories/');
+    if (!res.ok) { alert('دریافت دسته‌ها با خطا روبه‌رو شد.'); return; }
+
+    state.categories = await res.json();
+    state.items = Object.fromEntries(state.categories.map((c) => [c.id, c]));
+
+    ['expense', 'income'].forEach((type) => {
+      // دسته‌های شخصی بالا و دسته‌های پیش‌فرض پایین
+      const list = state.categories
+        .filter((c) => c.type === type)
+        .sort((a, b) => Number(a.is_default) - Number(b.is_default));
+      $(`list-${type}`).innerHTML = list.length
+        ? list.map(renderItem).join('')
+        : '<p class="muted">دسته‌ای وجود ندارد.</p>';
+    });
+  }
+
+  function openModal(category) {
+    hideError($('form-error'));
+    state.editingId = category ? category.id : null;
+    $('modal-title').textContent = category ? 'ویرایش دسته' : 'دسته‌ی جدید';
+    $('m-name').value = category ? category.name : '';
+    $('m-type').value = category ? category.type : 'expense';
+    $('m-color').value = category ? safeColor(category.color) : '#4f46e5';
+    $('modal').classList.remove('hidden');
+    $('m-name').focus();
+  }
+
+  function closeModal() {
+    $('modal').classList.add('hidden');
+  }
+
+  $('cat-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideError($('form-error'));
+    $('m-save').disabled = true;
+
+    const editingId = state.editingId;
+    const body = {
+      name: $('m-name').value.trim(),
+      type: $('m-type').value,
+      color: $('m-color').value,
+    };
+
+    try {
+      const res = await apiFetch(
+        editingId ? `/api/categories/${editingId}/` : '/api/categories/',
+        { method: editingId ? 'PUT' : 'POST', body: JSON.stringify(body) }
+      );
+      if (res.ok) {
+        closeModal();
+        toast(editingId ? 'دسته ویرایش شد.' : 'دسته‌ی جدید ساخته شد.', 'success');
+        await loadCategories();
+        return;
+      }
+      showError($('form-error'), formatErrors(await res.json()));
+    } catch (error) {
+      showError($('form-error'), 'ارتباط با سرور برقرار نشد.');
+    } finally {
+      $('m-save').disabled = false;
+    }
+  });
+
+  $('add-btn').addEventListener('click', () => openModal(null));
+  $('m-cancel').addEventListener('click', closeModal);
+  $('modal').addEventListener('click', (event) => {
+    if (event.target === $('modal')) closeModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeModal();
+  });
+
+  document.querySelector('.categories-grid').addEventListener('click', async (event) => {
+    const editId = event.target.dataset.edit;
+    const deleteId = event.target.dataset.delete;
+
+    if (editId) openModal(state.items[editId]);
+
+    if (deleteId) {
+      if (!confirm('این دسته حذف شود؟')) return;
+      const res = await apiFetch(`/api/categories/${deleteId}/`, { method: 'DELETE' });
+      if (res.status === 204) {
+        toast('دسته حذف شد.', 'success');
+        loadCategories();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.detail || 'حذف دسته انجام نشد.');
+      }
+    }
+  });
+
+  loadCategories();
+</script>
+{% endblock %}

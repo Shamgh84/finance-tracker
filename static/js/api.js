@@ -144,3 +144,24 @@ function bindMoneyInput(input) {
 }
 
 document.querySelectorAll('input[data-money]').forEach(bindMoneyInput);
+
+// ---------- پیام‌های شناور (جایگزین alert) ----------
+function toast(message, type = 'info') {
+  let box = document.getElementById('toast-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'toast-box';
+    document.body.appendChild(box);
+  }
+  const item = document.createElement('div');
+  item.className = `toast toast-${type}`;
+  item.textContent = message;
+  box.appendChild(item);
+  setTimeout(() => {
+    item.classList.add('toast-out');
+    setTimeout(() => item.remove(), 300);
+  }, 3500);
+}
+
+// همه‌ی alertهای برنامه از این به بعد به صورت پیام شناور نمایش داده می‌شوند
+window.alert = (message) => toast(message, 'error');
