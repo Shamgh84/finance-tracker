@@ -14,6 +14,7 @@ urlpatterns = [
     path('api/transactions/', include('transactions.urls')),
     path('api/budgets/', include('budgets.urls')),
     path('api/analytics/', include('analytics.urls')),
+    path('api/goals/', include('goals.urls')),
     # مستندات API
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
@@ -26,4 +27,6 @@ urlpatterns = [
     path('budgets/', TemplateView.as_view(template_name='budgets.html'), name='budgets-page'),
     path('analysis/', TemplateView.as_view(template_name='analysis.html'), name='analysis-page'),
     path('categories/', TemplateView.as_view(template_name='categories.html'), name='categories-page'),
+    path('goals/', TemplateView.as_view(template_name='goals.html'), name='goals-page'),
+    
 ]

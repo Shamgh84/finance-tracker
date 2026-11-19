@@ -1,0 +1,284 @@
+{% extends 'app_base.html' %}
+
+{% block title %}اهداف پس‌انداز | مدیریت مالی شخصی{% endblock %}
+
+{% block page %}
+<div class="page-head">
+  <h2>اهداف پس‌انداز</h2>
+  <button class="btn" id="add-btn" type="button">+ هدف جدید</button>
+</div>
+
+<section id="goal-summary" class="cmp-summary hidden"></section>
+
+<section id="goal-grid" class="goal-grid"></section>
+<p id="empty-msg" class="muted hidden">هنوز هدفی نساخته‌اید. با دکمه‌ی «هدف جدید» شروع کنید؛ مثلاً «خرید لپ‌تاپ» یا «سفر».</p>
+
+<div id="goal-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3 id="goal-title"></h3>
+    <div id="goal-error" class="alert hidden"></div>
+    <form id="goal-form">
+      <div class="form-group">
+        <label for="g-name">نام هدف</label>
+        <input id="g-name" maxlength="100" placeholder="مثلاً خرید لپ‌تاپ" required>
+      </div>
+      <div class="form-group">
+        <label for="g-target">مبلغ هدف (تومان)</label>
+        <input id="g-target" type="text" inputmode="numeric" autocomplete="off" data-money class="ltr" required>
+      </div>
+      <div class="form-group">
+        <label>مهلت رسیدن به هدف (اختیاری)</label>
+        <div id="g-deadline"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="g-save" type="submit">ذخیره</button>
+        <button class="btn btn-outline" id="g-cancel" type="button">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="contrib-modal" class="modal hidden">
+  <div class="modal-box">
+    <h3 id="c-title"></h3>
+    <p id="c-hint" class="muted"></p>
+    <div id="c-error" class="alert hidden"></div>
+    <form id="contrib-form">
+      <div class="form-group">
+        <label for="c-amount">مبلغ (تومان)</label>
+        <input id="c-amount" type="text" inputmode="numeric" autocomplete="off" data-money class="ltr" required>
+      </div>
+      <div class="form-group">
+        <label for="c-note">توضیح (اختیاری)</label>
+        <input id="c-note" maxlength="255">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="c-save" type="submit">ثبت</button>
+        <button class="btn btn-outline" id="c-cancel" type="button">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  Object.assign(FIELD_LABELS, {
+    name: 'نام هدف', target_amount: 'مبلغ هدف', deadline: 'مهلت', amount: 'مبلغ', note: 'توضیح',
+  });
+
+  const state = { items: {}, editingId: null, contribute: null };
+  const deadlinePicker = DatePicker.create($('g-deadline'), { optional: true });
+
+  const STATUS = {
+    done: { label: 'تکمیل شد', badge: 'status-ok', bar: 'progress-ok' },
+    overdue: { label: 'مهلت گذشته', badge: 'status-exceeded', bar: 'progress-exceeded' },
+    active: { label: 'در جریان', badge: 'status-active', bar: 'progress-primary' },
+  };
+
+  // ---------- نمایش ----------
+  function renderCard(g) {
+    const info = STATUS[g.status];
+    const percent = Number(g.percent);
+    const width = Math.min(percent, 100);
+
+    let deadline = '';
+    if (g.deadline) {
+      const days = g.days_left;
+      let left = '';
+      if (g.status !== 'done') {
+        left = days >= 0
+          ? ` · ${Jalali.fa(days)} روز مانده`
+          : ` · ${Jalali.fa(-days)} روز از مهلت گذشته`;
+      }
+      deadline = `<div class="muted">مهلت: ${Jalali.formatJalali(g.deadline)}
+        <span class="latin">(${Jalali.formatGregorian(g.deadline)})</span>${left}</div>`;
+    }
+
+    let hint = '';
+    if (g.status === 'done') {
+      hint = '<div class="goal-hint goal-done">🎉 به هدفت رسیدی!</div>';
+    } else if (g.monthly_needed !== null && g.monthly_needed !== undefined) {
+      hint = `<div class="goal-hint">برای رسیدن به هدف، ماهانه حدود ${formatMoney(g.monthly_needed)} پس‌انداز کن.</div>`;
+    }
+
+    return `<div class="card goal-card">
+      <div class="budget-head">
+        <strong>${escapeHtml(g.name)}</strong>
+        <span class="status-badge ${info.badge}">${info.label}</span>
+      </div>
+      <div class="progress"><div class="progress-bar ${info.bar}" style="width:${width}%"></div></div>
+      <div class="budget-stats">
+        <span>${formatMoney(g.saved)} از ${formatMoney(g.target_amount)}</span>
+        <span>${percent.toLocaleString('fa-IR')}٪</span>
+      </div>
+      ${g.status === 'done' ? '' : `<div class="muted">باقی‌مانده: ${formatMoney(g.remaining)}</div>`}
+      ${deadline}
+      ${hint}
+      <div class="goal-actions">
+        <button class="btn goal-btn" data-deposit="${g.id}" type="button">+ واریز</button>
+        <button class="btn btn-outline goal-btn" data-withdraw="${g.id}" type="button">برداشت</button>
+        <button class="link-btn" data-edit="${g.id}" type="button">ویرایش</button>
+        <button class="link-btn danger" data-delete="${g.id}" type="button">حذف</button>
+      </div>
+    </div>`;
+  }
+
+  function renderSummary(goals) {
+    const box = $('goal-summary');
+    box.classList.toggle('hidden', goals.length === 0);
+    if (goals.length === 0) return;
+
+    const totalSaved = goals.reduce((sum, g) => sum + Number(g.saved), 0);
+    const totalTarget = goals.reduce((sum, g) => sum + Number(g.target_amount), 0);
+    const done = goals.filter((g) => g.status === 'done').length;
+    box.innerHTML = `
+      <div class="cmp-box"><span class="muted">مجموع پس‌انداز</span><strong>${formatMoney(totalSaved)}</strong></div>
+      <div class="cmp-box"><span class="muted">مجموع مبلغ هدف‌ها</span><strong>${formatMoney(totalTarget)}</strong></div>
+      <div class="cmp-box"><span class="muted">هدف‌های تکمیل‌شده</span><strong>${Jalali.fa(done)} از ${Jalali.fa(goals.length)}</strong></div>
+    `;
+  }
+
+  async function loadGoals() {
+    const res = await apiFetch('/api/goals/');
+    if (!res.ok) { alert('دریافت اهداف با خطا روبه‌رو شد.'); return; }
+    const goals = await res.json();
+    state.items = Object.fromEntries(goals.map((g) => [g.id, g]));
+    $('goal-grid').innerHTML = goals.map(renderCard).join('');
+    $('empty-msg').classList.toggle('hidden', goals.length > 0);
+    renderSummary(goals);
+  }
+
+  // ---------- ساخت و ویرایش هدف ----------
+  function openGoalModal(goal) {
+    hideError($('goal-error'));
+    state.editingId = goal ? goal.id : null;
+    $('goal-title').textContent = goal ? 'ویرایش هدف' : 'هدف جدید';
+    $('g-name').value = goal ? goal.name : '';
+    $('g-target').value = goal ? goal.target_amount : '';
+    deadlinePicker.set(goal && goal.deadline ? goal.deadline : '');
+    $('goal-modal').classList.remove('hidden');
+    $('g-name').focus();
+  }
+
+  $('goal-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideError($('goal-error'));
+    $('g-save').disabled = true;
+
+    const editingId = state.editingId;
+    const body = {
+      name: $('g-name').value.trim(),
+      target_amount: $('g-target').value,
+      deadline: deadlinePicker.value || null,
+    };
+
+    try {
+      const res = await apiFetch(
+        editingId ? `/api/goals/${editingId}/` : '/api/goals/',
+        { method: editingId ? 'PUT' : 'POST', body: JSON.stringify(body) }
+      );
+      if (res.ok) {
+        $('goal-modal').classList.add('hidden');
+        toast(editingId ? 'هدف ویرایش شد.' : 'هدف جدید ساخته شد.', 'success');
+        await loadGoals();
+        return;
+      }
+      showError($('goal-error'), formatErrors(await res.json()));
+    } catch (error) {
+      showError($('goal-error'), 'ارتباط با سرور برقرار نشد.');
+    } finally {
+      $('g-save').disabled = false;
+    }
+  });
+
+  // ---------- واریز و برداشت ----------
+  function openContribute(goal, mode) {
+    hideError($('c-error'));
+    state.contribute = { id: goal.id, mode };
+    $('c-title').textContent = mode === 'withdraw'
+      ? `برداشت از «${goal.name}»` : `واریز به «${goal.name}»`;
+    $('c-hint').textContent = `موجودی فعلی: ${formatMoney(goal.saved)}`;
+    $('c-amount').value = '';
+    $('c-note').value = '';
+    $('c-save').textContent = mode === 'withdraw' ? 'ثبت برداشت' : 'ثبت واریز';
+    $('contrib-modal').classList.remove('hidden');
+    $('c-amount').focus();
+  }
+
+  $('contrib-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideError($('c-error'));
+    $('c-save').disabled = true;
+
+    const { id, mode } = state.contribute;
+    const digits = $('c-amount').value;
+    const body = {
+      amount: digits && mode === 'withdraw' ? `-${digits}` : digits,
+      note: $('c-note').value.trim(),
+    };
+
+    try {
+      const res = await apiFetch(`/api/goals/${id}/contribute/`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const goal = await res.json();
+        $('contrib-modal').classList.add('hidden');
+        toast(
+          goal.status === 'done'
+            ? 'تبریک! به هدفت رسیدی 🎉'
+            : (mode === 'withdraw' ? 'برداشت ثبت شد.' : 'واریز ثبت شد.'),
+          'success'
+        );
+        await loadGoals();
+        return;
+      }
+      showError($('c-error'), formatErrors(await res.json()));
+    } catch (error) {
+      showError($('c-error'), 'ارتباط با سرور برقرار نشد.');
+    } finally {
+      $('c-save').disabled = false;
+    }
+  });
+
+  // ---------- رویدادها ----------
+  $('goal-grid').addEventListener('click', async (event) => {
+    const { deposit, withdraw, edit } = event.target.dataset;
+    const remove = event.target.dataset.delete;
+
+    if (deposit) openContribute(state.items[deposit], 'deposit');
+    if (withdraw) openContribute(state.items[withdraw], 'withdraw');
+    if (edit) openGoalModal(state.items[edit]);
+
+    if (remove) {
+      if (!confirm('این هدف و تاریخچه‌ی واریزهایش حذف شود؟')) return;
+      const res = await apiFetch(`/api/goals/${remove}/`, { method: 'DELETE' });
+      if (res.status === 204) {
+        toast('هدف حذف شد.', 'success');
+        loadGoals();
+      } else {
+        alert('حذف هدف انجام نشد.');
+      }
+    }
+  });
+
+  $('add-btn').addEventListener('click', () => openGoalModal(null));
+  $('g-cancel').addEventListener('click', () => $('goal-modal').classList.add('hidden'));
+  $('c-cancel').addEventListener('click', () => $('contrib-modal').classList.add('hidden'));
+  ['goal-modal', 'contrib-modal'].forEach((id) =>
+    $(id).addEventListener('click', (event) => {
+      if (event.target === $(id)) $(id).classList.add('hidden');
+    })
+  );
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      $('goal-modal').classList.add('hidden');
+      $('contrib-modal').classList.add('hidden');
+    }
+  });
+
+  loadGoals();
+</script>
+{% endblock %}

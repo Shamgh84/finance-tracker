@@ -9,6 +9,7 @@ from budgets.models import Budget
 from categories.models import Category
 from config.jalali import current_jalali_month
 from transactions.models import Transaction
+from goals.models import Goal
 
 
 class SeedDemoTests(TestCase):
@@ -23,6 +24,7 @@ class SeedDemoTests(TestCase):
         year, month = current_jalali_month(timezone.localdate())
         budgets = Budget.objects.filter(user=user, year=year, month=month)
         self.assertEqual(budgets.count(), 4)
+        self.assertEqual(Goal.objects.filter(user=user).count(), 3)
 
     def test_no_future_transactions(self):
         self.run_command()

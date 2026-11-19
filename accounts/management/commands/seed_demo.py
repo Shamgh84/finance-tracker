@@ -14,6 +14,7 @@ from config.jalali import (
     month_label,
     shift_month,
 )
+from goals.models import Goal, GoalContribution
 from transactions.models import Transaction
 
 DEMO_USERNAME = 'demo'
@@ -137,8 +138,24 @@ class Command(BaseCommand):
                 alert_threshold=80,
             )
 
+        # اهداف پس‌انداز: یکی در جریان، یکی نزدیک به مهلت و یکی تکمیل‌شده
+        goals = [
+            ('خرید لپ‌تاپ', 40_000_000, 120, [(70, 6_000_000), (40, 7_500_000), (10, 5_000_000)]),
+            ('سفر تابستانی', 15_000_000, 45, [(50, 4_000_000), (20, 5_000_000)]),
+            ('صندوق اضطراری', 10_000_000, None, [(80, 6_000_000), (30, 4_000_000)]),
+        ]
+        for name, target, deadline_days, deposits in goals:
+            goal = Goal.objects.create(
+                user=user, name=name, target_amount=Decimal(target),
+                deadline=today + timedelta(days=deadline_days) if deadline_days else None,
+            )
+            GoalContribution.objects.bulk_create([
+                GoalContribution(goal=goal, amount=Decimal(amount), date=today - timedelta(days=ago), note='واریز')
+                for ago, amount in deposits
+            ])
+
         self.stdout.write(self.style.SUCCESS(
-            f'کاربر نمونه ساخته شد: {len(rows)} تراکنش در ۴ ماه تا {month_label(year, month)}، و ۴ بودجه.'
+            f'کاربر نمونه ساخته شد: {len(rows)} تراکنش در ۴ ماه تا {month_label(year, month)}، ۴ بودجه و ۳ هدف پس‌انداز.'
         ))
         self.stdout.write(f'نام کاربری: {DEMO_USERNAME}   رمز عبور: {DEMO_PASSWORD}')
 

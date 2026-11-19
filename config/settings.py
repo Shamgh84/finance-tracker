@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'transactions',
     'budgets',
     'analytics',
+    'goals',
     'drf_spectacular',
     'drf_spectacular_sidecar',
 ]
