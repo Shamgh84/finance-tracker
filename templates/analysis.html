@@ -95,7 +95,7 @@
   function renderHealth(health) {
     const color = LEVEL_COLORS[health.level] || '#6b7280';
     $('score-ring').style.background =
-      `conic-gradient(${color} ${health.score * 3.6}deg, #e5e7eb 0deg)`;
+        `conic-gradient(${color} ${health.score * 3.6}deg, var(--ring-track) 0deg)`;
     $('score-value').textContent = fa(health.score);
     $('score-value').style.color = color;
     $('score-label').textContent = health.level_label;

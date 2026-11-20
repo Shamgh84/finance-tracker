@@ -70,10 +70,17 @@
   const charts = { pie: null, trend: null };
   const nowJ = Jalali.today();
 
-  if (typeof Chart !== 'undefined') {
+    // رنگ‌های نمودار با حالت روز یا شب هماهنگ می‌شوند
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function applyChartTheme() {
+    if (typeof Chart === 'undefined') return;
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
     Chart.defaults.font.family = 'Vazirmatn, Tahoma, sans-serif';
-    Chart.defaults.color = '#4b5563';
+    Chart.defaults.color = dark ? '#c7cbe6' : '#4b5563';
+    Chart.defaults.borderColor = dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
   }
+  applyChartTheme();
 
   function fillMonthSelect(select) {
     select.innerHTML = '';
@@ -137,6 +144,7 @@
         datasets: [{
           data: data.categories.map((c) => Number(c.total)),
           backgroundColor: data.categories.map((c) => c.color),
+          borderColor: cssVar('--card'),
         }],
       },
       options: {
@@ -209,7 +217,11 @@
   $('f-month').addEventListener('change', loadMonthData);
   $('c-type').addEventListener('change', loadBreakdown);
   $('t-months').addEventListener('change', loadTrend);
-
+    window.addEventListener('themechange', () => {
+    applyChartTheme();
+    loadBreakdown();
+    loadTrend();
+  });
   // ---------- شروع ----------
   fillMonthSelect($('f-month'));
   $('f-year').value = nowJ.year;
